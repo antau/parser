@@ -7,7 +7,7 @@ import streamlit as st
 st.set_page_config(page_title="eBay Picklist Parser", page_icon="🃏", layout="wide")
 
 st.title("🃏 eBay Picklist Parser")
-st.write("Paste your eBay picklist text below to extract card variations, buyers, quantities, and shipping info.")
+st.write("Paste your eBay picklist text below to extract card variations, buyers, and quantities.")
 
 # --- SESSION STATE INIT ---
 for key, default in {
@@ -34,57 +34,53 @@ st.session_state.highlight_threshold = highlight_threshold
 
 # --- PARSE FUNCTION ---
 def parse_picklist(text):
-    lines = text.splitlines()
     order_pattern = re.compile(r"\b(\d{2}-\d{5}-\d{5})\b")
     buyer_pattern = re.compile(r"^[a-zA-Z0-9_-]+$", re.MULTILINE)
     card_pattern = re.compile(r"Select Your Card:\s*([\d/]+)\s+([^(]+)\(([^)]+)\)")
 
     cards_by_buyer = defaultdict(list)
-    buyer_info_dict = {}
+    buyers_info = {}
     current_buyer = None
     current_order = None
 
+    lines = text.splitlines()
+
     for i, line in enumerate(lines):
         line = line.strip()
-
-        # --- Detect order number ---
+        # Check for order
         order_match = order_pattern.search(line)
         if order_match:
             current_order = order_match.group(1)
-            continue
-
-        # --- Detect buyer username ---
+        # Check for buyer
         elif buyer_pattern.match(line) and not line.startswith("Pokemon"):
             current_buyer = line
-            continue
+        # Capture shipping info: a line with only an integer number precedes name & address
+        elif current_buyer and line.isdigit() and i+1 < len(lines):
+            name_address_lines = []
+            for j in range(i+1, len(lines)):
+                next_line = lines[j].strip()
+                if not next_line:
+                    break
+                name_address_lines.append(next_line)
+            buyers_info[current_buyer] = " ".join(name_address_lines)
 
-        # --- Detect Name & Shipping Address ---
-        if current_buyer:
-            # Line with only a number preceded by tab
-            if re.match(r"^\t\d+$", line):
-                name_addr_line = lines[i+1].strip() if i+1 < len(lines) else "-"
-                buyer_info_dict[current_buyer] = name_addr_line
-                continue
-
-        # --- Detect card lines ---
+        # Check for card line
         card_match = card_pattern.search(line)
         if card_match and current_buyer:
             number, name, variation = card_match.groups()
-
             # Look up to 5 lines above for Quantity
             qty = 1
             for k in range(i-1, max(i-6, -1), -1):
                 qty_line = lines[k].strip()
-                qty_match = re.match(r"Item no\.\s*\d+\s+Quantity:\s*(\d+)", qty_line)
+                qty_match = re.match(r"Item no\.: \d+\s+Quantity:\s*(\d+)", qty_line)
                 if qty_match:
                     qty = int(qty_match.group(1))
                     break
-
             cards_by_buyer[current_buyer].append({
                 "order": current_order,
                 "card": f"{number.strip()} {name.strip()}",
                 "variation": variation.strip(),
-                "quantity": qty
+                "quantity": qty,
             })
 
     summary_dict = {}
@@ -108,16 +104,13 @@ def parse_picklist(text):
             summary_text += f"Orders: {', '.join(order_ids)}\n"
         for item in summary_list:
             summary_text += f"• {item['Card']} ({item['Variation']}) ×{item['Quantity']}\n"
-        # Include Name & Shipping if available
-        if buyer in buyer_info_dict:
-            summary_text += f"Name & Shipping: {buyer_info_dict[buyer]}\n"
         summary_text += "\n"
 
     if not summary_dict:
-        return None, {}, "", {}
+        return None, {}, ""
 
     df = pd.DataFrame([item for items in summary_dict.values() for item in items])
-    return df, summary_dict, summary_text.strip(), buyer_info_dict
+    return df, summary_dict, summary_text.strip(), buyers_info
 
 # --- TEXT INPUT ---
 picklist_text = st.text_area(
@@ -130,48 +123,41 @@ st.session_state.picklist_text = picklist_text
 
 # --- AUTO-PARSE WHEN TEXT CHANGES ---
 if picklist_text.strip():
-    df, summary_dict, summary_text, buyer_info_dict = parse_picklist(picklist_text)
+    df, summary_dict, summary_text, buyers_info = parse_picklist(picklist_text)
     st.session_state.parsed_df = df
     st.session_state.summary_dict = summary_dict
     st.session_state.summary_text = summary_text
-    st.session_state.buyer_info_dict = buyer_info_dict
+    st.session_state.buyers_info = buyers_info
 
 # --- SHOW RESULTS IF AVAILABLE ---
 if st.session_state.parsed_df is not None:
     df = st.session_state.parsed_df
     summary_dict = st.session_state.summary_dict
     summary_text = st.session_state.summary_text
-    buyer_info_dict = st.session_state.buyer_info_dict
+    buyers_info = st.session_state.buyers_info
 
-    st.subheader("📊 Parsed Data (collapsed by default)")
-    with st.expander("Show Parsed Data", expanded=False):
-        # --- HIGHLIGHT FUNCTION BASED ON VARIATION & QUANTITY ---
+    st.subheader("📊 Parsed Data")
+    with st.expander("View Parsed Data", expanded=False):
         def highlight_cards(row):
-            style = ['']*len(row)
-            if row['Variation'].lower() == "holo rare":
-                style = ['background-color: #add8e6']*len(row)  # blue
-            elif row['Variation'].lower() == "non-holo":
-                style = ['background-color: #ff9999']*len(row)  # red
-            if row['Quantity'] >= highlight_threshold:
-                style = ['font-weight: bold' if s=='' else s+'; font-weight: bold' for s in style]
-            return style
+            styles = ['']*len(row)
+            if row['Variation'].lower() == "non-holo":
+                styles = ['background-color: #ff9999']*len(row)  # red
+            elif row['Variation'].lower() == "holo rare":
+                styles = ['background-color: #add8ff']*len(row)  # blue
+            elif row['Quantity'] >= highlight_threshold:
+                styles = ['background-color: #ffdd99']*len(row)  # orange
+            if row['Quantity'] > 1:
+                styles = [f"{s}; font-weight: bold" if s else "font-weight: bold" for s in styles]
+            return styles
 
-        # --- Reorder columns ---
-        df = df[['Order', 'Card', 'Variation', 'Quantity']]
+        st.dataframe(df.style.apply(highlight_cards, axis=1), use_container_width=True)
 
-        styled_df = df.style.apply(highlight_cards, axis=1)
-        st.dataframe(styled_df, use_container_width=True)
-
-    st.subheader("📦 Per-Buyer Packing Summary (expanded by default)")
+    st.subheader("📦 Per-Buyer Packing Summary")
     for buyer, items in summary_dict.items():
-        header = f"👤 {buyer} ({len(items)} items)"
-        if buyer in buyer_info_dict:
-            header += f": {buyer_info_dict[buyer]}"
-        with st.expander(header, expanded=True):
+        header_info = buyers_info.get(buyer, "-")
+        with st.expander(f"👤 {buyer} ({len(items)} items): {header_info}", expanded=True):
             buyer_df = pd.DataFrame(items)
-            buyer_df = buyer_df[['Order', 'Card', 'Variation', 'Quantity']]
-            styled_buyer_df = buyer_df.style.apply(highlight_cards, axis=1)
-            st.dataframe(styled_buyer_df, use_container_width=True)
+            st.dataframe(buyer_df.style.apply(highlight_cards, axis=1), use_container_width=True)
 
     # --- DOWNLOAD OPTIONS ---
     csv = df.to_csv(index=False).encode("utf-8")
@@ -197,5 +183,5 @@ if st.button("🧹 Clear All Data"):
     st.session_state.parsed_df = None
     st.session_state.summary_dict = {}
     st.session_state.summary_text = ""
-    st.session_state.buyer_info_dict = {}
+    st.session_state.buyers_info = {}
     st.experimental_rerun()
