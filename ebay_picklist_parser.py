@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 # --- PAGE SETUP ---
-st.set_page_config(page_title="eBay Picklist Parser", page_icon="🃏", layout="wide")
+st.set_page_config(page_title="eBay Picklist Parser v2", page_icon="🃏", layout="wide")
 st.title("🃏 eBay Picklist Parser")
 st.write("Paste your eBay picklist text below to extract card variations, buyers, and quantities.")
 
