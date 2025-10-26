@@ -55,13 +55,12 @@ def parse_picklist(text):
             number, name, variation = card_match.groups()
             # Default quantity
             quantity = 1
-            # Check next line for Quantity
-            if i + 1 < len(lines):
-                next_line = lines[i + 1].strip()
-                q_match = quantity_pattern.search(next_line)
+            # Check previous line for Quantity
+            if i > 0:
+                prev_line = lines[i - 1].strip()
+                q_match = quantity_pattern.search(prev_line)
                 if q_match:
                     quantity = int(q_match.group(1))
-                    i += 1  # Skip quantity line
             cards_by_buyer[current_buyer].append({
                 "Order": current_order or "",
                 "Card Number": number.strip(),
