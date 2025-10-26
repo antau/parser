@@ -32,14 +32,11 @@ highlight_threshold = st.sidebar.number_input(
 )
 st.session_state.highlight_threshold = highlight_threshold
 
-# --- UPDATED PARSE FUNCTION ---
+# --- PARSE FUNCTION ---
 def parse_picklist(text):
     order_pattern = re.compile(r"\b(\d{2}-\d{5}-\d{5})\b")
     buyer_pattern = re.compile(r"^[a-zA-Z0-9_-]+$", re.MULTILINE)
-    card_pattern = re.compile(
-        r"Item no\.: \d+\s+Quantity: (\d+).*?Select Your Card:\s*([\d/]+)\s+([^(]+)\(([^)]+)\)",
-        re.DOTALL
-    )
+    card_pattern = re.compile(r"Select Your Card:\s*([\d/]+)\s+([^(]+)\(([^)]+)\)")
 
     cards_by_buyer = defaultdict(list)
     current_buyer = None
@@ -54,36 +51,34 @@ def parse_picklist(text):
             current_buyer = line
         card_match = card_pattern.search(line)
         if card_match and current_buyer:
-            quantity, number, name, variation = card_match.groups()
+            number, name, variation = card_match.groups()
             cards_by_buyer[current_buyer].append({
                 "order": current_order,
                 "number": number.strip(),
                 "name": name.strip(),
                 "variation": variation.strip(),
-                "quantity": int(quantity)
             })
 
     summary_dict = {}
     summary_text = ""
     for buyer, cards in cards_by_buyer.items():
-        grouped = defaultdict(int)
-        for c in cards:
-            key = (c["number"], c["name"], c["variation"], c["order"])
-            grouped[key] += c["quantity"]
-
+        grouped = Counter((c["number"], c["name"], c["variation"]) for c in cards)
         summary_list = []
-        for (number, name, variation, order), qty in grouped.items():
+        for (number, name, variation), qty in grouped.items():
             summary_list.append({
-                "Order": order,
+                "Order": next((c["order"] for c in cards if c["number"] == number), ""),
                 "Card Number": number,
-                "Card Name": name,
-                "Variation": variation,
-                "Quantity": qty
+                "Card Name": name.strip(),
+                "Variation": variation.strip(),
+                "Quantity": qty,
             })
         summary_dict[buyer] = summary_list
 
-        # Prepare text summary
+        # Prepare plain text summary
         summary_text += f"\n👤 {buyer}\n" + "-"*40 + "\n"
+        order_ids = sorted({c['order'] for c in cards if c['order']})
+        if order_ids:
+            summary_text += f"Orders: {', '.join(order_ids)}\n"
         for item in summary_list:
             summary_text += f"• {item['Card Number']} {item['Card Name']} ({item['Variation']}) ×{item['Quantity']}\n"
         summary_text += "\n"
@@ -92,8 +87,8 @@ def parse_picklist(text):
         return None, {}, ""
 
     df = pd.DataFrame([item for items in summary_dict.values() for item in items])
-    return df, summary_dict, summary_text.strip()
 
+    return df, summary_dict, summary_text.strip()
 
 # --- TEXT INPUT ---
 picklist_text = st.text_area(
