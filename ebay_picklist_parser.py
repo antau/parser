@@ -114,9 +114,17 @@ if st.session_state.parsed_df is not None:
 
     st.subheader("📊 Parsed Data")
 
-    # --- HIGHLIGHT HIGH QUANTITY CARDS ---
+    # --- HIGHLIGHT FUNCTION BASED ON VARIATION ---
     def highlight_cards(row):
-        return ['background-color: #ffdd99' if row['Quantity'] >= highlight_threshold else '' for _ in row]
+        var_lower = str(row['Variation']).lower()
+        if var_lower == "non-holo":
+            return ['background-color: #add8e6' for _ in row]  # light blue
+        elif var_lower == "holo rare":
+            return ['background-color: #90ee90' for _ in row]  # light green
+        elif row['Quantity'] >= highlight_threshold:
+            return ['background-color: #ffdd99' for _ in row]  # light orange for high quantity
+        else:
+            return ['' for _ in row]
 
     styled_df = df.style.apply(highlight_cards, axis=1)
     st.dataframe(styled_df, use_container_width=True)
