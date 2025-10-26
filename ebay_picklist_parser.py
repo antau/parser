@@ -30,7 +30,6 @@ st.session_state.highlight_threshold = highlight_threshold
 def parse_picklist(text):
     order_pattern = re.compile(r"\b(\d{2}-\d{5}-\d{5})\b")
     buyer_pattern = re.compile(r"^[a-zA-Z0-9_-]+$", re.MULTILINE)
-    # Match Select Your Card, card number, name, variation, and Quantity
     card_pattern = re.compile(
         r"Select Your Card:\s*([\d/]+)\s+([^(]+)\(([^)]+)\).*?Quantity[:\s]+(\d+)",
         re.IGNORECASE
@@ -56,4 +55,16 @@ def parse_picklist(text):
 
         card_match = card_pattern.search(line)
         if card_match and current_buyer:
-            number, name, variation, quantity = ca
+            number, name, variation, quantity = card_match.groups()
+            quantity = int(quantity)
+            cards_by_buyer[current_buyer].append({
+                "Order": current_order or "",
+                "Card Number": number.strip(),
+                "Card Name": name.strip(),
+                "Variation": variation.strip(),
+                "Quantity": quantity
+            })
+
+    summary_dict = {}
+    for buyer, cards in cards_by_buyer.items():
+        groupe
