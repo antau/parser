@@ -5,9 +5,8 @@ import streamlit as st
 
 # --- PAGE SETUP ---
 st.set_page_config(page_title="eBay Picklist Parser", page_icon="🃏", layout="wide")
-
 st.title("🃏 eBay Picklist Parser")
-st.write("Paste your eBay picklist text below to extract card variations, buyers, quantities, and shipping info.")
+st.write("Paste your eBay picklist text below to extract card variations, buyers, and quantities.")
 
 # --- SESSION STATE INIT ---
 for key, default in {
@@ -21,7 +20,7 @@ for key, default in {
     if key not in st.session_state:
         st.session_state[key] = default
 
-# --- THEME TOGGLE ---
+# --- THEME & HIGHLIGHT SETTINGS ---
 st.sidebar.title("Settings")
 theme = st.sidebar.radio("Theme:", ["Light", "Dark"])
 st.session_state.theme = theme.lower()
@@ -45,23 +44,25 @@ def parse_picklist(text):
     buyer_info = {}
     current_buyer = None
     current_order = None
+    qty = 1
 
     i = 0
     while i < len(lines):
         line = lines[i].strip()
+
         # Detect order
         order_match = order_pattern.search(line)
         if order_match:
             current_order = order_match.group(0)
+
         # Detect buyer
         elif buyer_pattern.match(line) and not line.startswith("Pokemon"):
             current_buyer = line
+
         # Detect quantity
-        qty_match = quantity_pattern.search(line)
-        if qty_match:
-            qty = int(qty_match.group(1))
-        else:
-            qty = 1
+        if line.startswith("Item no.:") and "Quantity:" in line:
+            qty_match = quantity_pattern.search(line)
+            qty = int(qty_match.group(1)) if qty_match else 1
 
         # Detect card
         card_match = card_pattern.search(line)
@@ -73,8 +74,9 @@ def parse_picklist(text):
                 "Variation": variation.strip(),
                 "Quantity": qty
             })
-        # Detect buyer info (number line)
-        if re.match(r"^\t?\d+\s*$", line) and i + 1 < len(lines):
+
+        # Detect buyer info (line with tab + integer)
+        if re.match(r"^\t?\d+\s*$", line):
             info_lines = []
             j = i + 1
             while j < len(lines) and lines[j].strip() != "":
@@ -84,9 +86,11 @@ def parse_picklist(text):
                 name = info_lines[0]
                 address = ", ".join(info_lines[1:]) if len(info_lines) > 1 else "-"
                 buyer_info[current_buyer] = f"{name} ({address})"
-            i = j - 1  # Skip past the buyer info lines
+            i = j - 1  # skip past buyer info lines
+
         i += 1
 
+    # Convert to DataFrame
     summary_dict = {}
     summary_text = ""
     for buyer, cards in cards_by_buyer.items():
@@ -101,7 +105,7 @@ def parse_picklist(text):
             })
         summary_dict[buyer] = summary_list
 
-        # Plain text summary
+        # Prepare plain text summary
         summary_text += f"\n👤 {buyer}\n" + "-"*40 + "\n"
         order_ids = sorted({c['Order'] for c in cards if c['Order']})
         if order_ids:
@@ -114,9 +118,7 @@ def parse_picklist(text):
         return None, {}, {}, ""
 
     df = pd.DataFrame([item for items in summary_dict.values() for item in items])
-
     return df, summary_dict, buyer_info, summary_text.strip()
-
 
 # --- TEXT INPUT ---
 picklist_text = st.text_area(
@@ -143,27 +145,31 @@ if st.session_state.parsed_df is not None:
     summary_text = st.session_state.summary_text
 
     st.subheader("📊 Parsed Data")
-    def highlight_cards(row):
-        styles = ['' for _ in row]
-        var = row['Variation'].lower()
-        if var == "non-holo":
-            styles = ['background-color: #ff9999' for _ in row]
-        elif var == "holo rare":
-            styles = ['background-color: #99ccff' for _ in row]
-        # bold if Quantity > threshold
-        if row['Quantity'] > st.session_state.highlight_threshold:
-            styles = [s + '; font-weight: bold' for s in styles]
-        return styles
+    with st.expander("View Parsed Data (collapsed by default)", expanded=False):
 
-    with st.expander("Parsed Data Table", expanded=False):
-        st.dataframe(df.style.apply(highlight_cards, axis=1), use_container_width=True)
+        # --- HIGHLIGHT FUNCTION BASED ON VARIATION AND QUANTITY ---
+        def highlight_cards(row):
+            color = ""
+            if row['Variation'] == "Non-Holo":
+                color = "#ff9999"  # red
+            elif row['Variation'] == "Holo Rare":
+                color = "#99ccff"  # blue
+            # Reverse Holo has no color
+            styles = [f"background-color: {color}" if color else "" for _ in row]
+            # Bold Quantity > 1
+            if row['Quantity'] > 1:
+                styles = [s + "; font-weight: bold" if s else "font-weight: bold" for s in styles]
+            return styles
 
-    st.subheader("📦 Per-Buyer Packing Summary (Collapsible)")
+        styled_df = df.style.apply(highlight_cards, axis=1)
+        st.dataframe(styled_df, use_container_width=True)
 
+    st.subheader("📦 Per-Buyer Packing Summary (expanded by default)")
     for buyer, items in summary_dict.items():
-        with st.expander(f"👤 {buyer} ({len(items)} items): {buyer_info.get(buyer,'-')}", expanded=True):
+        with st.expander(f"👤 {buyer} ({len(items)} items): {buyer_info.get(buyer, '-')}", expanded=True):
             buyer_df = pd.DataFrame(items)
-            st.dataframe(buyer_df.style.apply(highlight_cards, axis=1), use_container_width=True)
+            styled_buyer_df = buyer_df.style.apply(highlight_cards, axis=1)
+            st.dataframe(styled_buyer_df, use_container_width=True)
 
     # --- DOWNLOAD OPTIONS ---
     csv = df.to_csv(index=False).encode("utf-8")
