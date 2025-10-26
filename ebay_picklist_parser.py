@@ -10,14 +10,12 @@ if picklist_text:
     # Regex patterns
     item_pattern = re.compile(r"Item no\.: .* Quantity: (\d+)", re.IGNORECASE)
     card_pattern = re.compile(r"Select Your Card: (\d+/\d+) (.+?) \((.+?)\)")
-    address_line_pattern = re.compile(r"\d+\s*")  # lines with numbers could be line counts, we skip
-
-    # Storage
+    
     cards_by_buyer = defaultdict(list)
     buyer_name = None
     buyer_address_lines = []
     current_order = None
-
+    
     lines = picklist_text.splitlines()
     i = 0
     while i < len(lines):
@@ -27,12 +25,12 @@ if picklist_text:
         if re.match(r"\d{2}-\d{5}-\d{5}", line):
             current_order = line
 
-        # Detect Quantity
+        # Detect Quantity line
         qty_match = item_pattern.search(line)
         if qty_match:
             quantity = int(qty_match.group(1))
 
-            # Look ahead for the Card line (skip blank lines)
+            # Look ahead for the card line (skip blank lines)
             j = i + 1
             while j < len(lines) and not lines[j].strip():
                 j += 1
@@ -46,24 +44,22 @@ if picklist_text:
                         "Variation": variation,
                         "Quantity": quantity
                     })
-            i = j  # skip to the card line after processing
+            i = j  # skip to card line after processing
 
         # Detect Buyer Name and Address block
         elif line and not line.startswith("Pokemon") and not line.startswith("Item no") and not line.startswith("Value") and not re.match(r"\d{2}-\d{5}-\d{5}", line):
-            # Check if following lines are address lines
-            buyer_name = line
+            buyer_name_line = line
             buyer_address_lines = []
             k = i + 1
             while k < len(lines) and lines[k].strip() and not re.match(r"\d{2}-\d{5}-\d{5}", lines[k].strip()):
-                # Stop if we reach a new order line
                 if re.match(r"\d+\s*$", lines[k].strip()):
                     k += 1
                     continue
                 buyer_address_lines.append(lines[k].strip())
                 k += 1
             if buyer_address_lines:
-                buyer_name = f"{buyer_name} ({', '.join(buyer_address_lines)})"
-            i = k - 1  # move to last processed line
+                buyer_name = f"{buyer_name_line} ({', '.join(buyer_address_lines)})"
+            i = k - 1
 
         i += 1
 
