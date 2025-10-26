@@ -1,10 +1,11 @@
 import re
-from collections import defaultdict
+from collections import defaultdict, Counter
 import pandas as pd
 import streamlit as st
 
 # --- PAGE SETUP ---
 st.set_page_config(page_title="eBay Picklist Parser", page_icon="🃏", layout="wide")
+
 st.title("🃏 eBay Picklist Parser")
 st.write("Paste your eBay picklist text below to extract card variations, buyers, and quantities.")
 
@@ -19,7 +20,7 @@ for key, default in {
     if key not in st.session_state:
         st.session_state[key] = default
 
-# --- SETTINGS ---
+# --- THEME TOGGLE ---
 st.sidebar.title("Settings")
 theme = st.sidebar.radio("Theme:", ["Light", "Dark"])
 st.session_state.theme = theme.lower()
@@ -93,6 +94,7 @@ def parse_picklist(text):
     df = pd.DataFrame([item for items in summary_dict.values() for item in items])
     return df, summary_dict, summary_text.strip()
 
+
 # --- TEXT INPUT ---
 picklist_text = st.text_area(
     "Paste your picklist text here:",
@@ -102,14 +104,14 @@ picklist_text = st.text_area(
 )
 st.session_state.picklist_text = picklist_text
 
-# --- AUTO-PARSE ---
+# --- AUTO-PARSE WHEN TEXT CHANGES ---
 if picklist_text.strip():
     df, summary_dict, summary_text = parse_picklist(picklist_text)
     st.session_state.parsed_df = df
     st.session_state.summary_dict = summary_dict
     st.session_state.summary_text = summary_text
 
-# --- SHOW RESULTS ---
+# --- SHOW RESULTS IF AVAILABLE ---
 if st.session_state.parsed_df is not None:
     df = st.session_state.parsed_df
     summary_dict = st.session_state.summary_dict
@@ -117,21 +119,17 @@ if st.session_state.parsed_df is not None:
 
     st.subheader("📊 Parsed Data")
 
-    # --- HIGHLIGHT FUNCTION ---
+    # --- HIGHLIGHT FUNCTION BASED ON VARIATION ---
     def highlight_cards(row):
-        styles = ['' for _ in row]
         var_lower = str(row['Variation']).lower()
         if var_lower == "non-holo":
-            styles = ['background-color: #add8e6' for _ in row]  # light blue
+            return ['background-color: #add8e6' for _ in row]  # light blue
         elif var_lower == "holo rare":
-            styles = ['background-color: #90ee90' for _ in row]  # light green
+            return ['background-color: #90ee90' for _ in row]  # light green
         elif row['Quantity'] >= highlight_threshold:
-            styles = ['background-color: #ffdd99' for _ in row]  # light orange
-
-        if row['Quantity'] > 1:
-            styles = [s + '; font-weight: bold' for s in styles]
-
-        return styles
+            return ['background-color: #ffdd99' for _ in row]  # light orange for high quantity
+        else:
+            return ['' for _ in row]
 
     styled_df = df.style.apply(highlight_cards, axis=1)
     st.dataframe(styled_df, use_container_width=True)
