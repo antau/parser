@@ -5,7 +5,6 @@ import streamlit as st
 
 # --- PAGE SETUP ---
 st.set_page_config(page_title="eBay Picklist Parser", page_icon="🃏", layout="wide")
-
 st.title("🃏 eBay Picklist Parser")
 st.write("Paste your eBay picklist text below to extract card variations, buyers, quantities, and shipping info.")
 
@@ -14,7 +13,8 @@ for key, default in {
     "picklist_text": "",
     "parsed_df": None,
     "summary_dict": {},
-    "theme": "light",
+    "buyer_info": {},
+    "summary_text": "",
     "highlight_threshold": 1,
 }.items():
     if key not in st.session_state:
@@ -36,6 +36,7 @@ st.session_state.highlight_threshold = highlight_threshold
 def parse_picklist(text):
     order_pattern = re.compile(r"\b(\d{2}-\d{5}-\d{5})\b")
     buyer_pattern = re.compile(r"^[a-zA-Z0-9_-]+$", re.MULTILINE)
+    item_pattern = re.compile(r"Item no\.:\s*\d+\s+Quantity:\s*(\d+)")
     card_pattern = re.compile(r"Select Your Card:\s*([\d/]+)\s+([^(]+)\(([^)]+)\)")
 
     cards_by_buyer = defaultdict(list)
@@ -59,7 +60,6 @@ def parse_picklist(text):
 
         # Name & Shipping Address
         elif current_buyer and re.match(r"^\t\d+\t$", line):
-            # Next line has Name and Shipping Address
             if i + 1 < len(lines):
                 buyer_info[current_buyer] = lines[i + 1].strip()
 
@@ -68,11 +68,11 @@ def parse_picklist(text):
         if card_match and current_buyer:
             number, name, variation = card_match.groups()
 
-            # Quantity is 2 lines above "Select Your Card:"
+            # Quantity is in the "Item no." line, which is 2 lines above
             qty = 1
             if i >= 2:
                 qty_line = lines[i - 2].strip()
-                qty_match = re.search(r"Quantity:\s*(\d+)", qty_line)
+                qty_match = item_pattern.search(qty_line)
                 if qty_match:
                     qty = int(qty_match.group(1))
 
@@ -140,15 +140,13 @@ if st.session_state.parsed_df is not None:
 
     st.subheader("📊 Parsed Data (Collapsed by default)")
     with st.expander("Show Parsed Data", expanded=False):
-        # --- HIGHLIGHT FUNCTION BASED ON VARIATION ---
         def highlight_cards(row):
-            var_lower = str(row['Variation']).lower()
             styles = [''] * len(row)
+            var_lower = str(row['Variation']).lower()
             if var_lower == "non-holo":
                 styles = ['background-color: #ff9999' for _ in row]  # red
             elif var_lower == "holo rare":
                 styles = ['background-color: #99ccff' for _ in row]  # blue
-
             if row['Quantity'] > 1:
                 styles = [s + '; font-weight: bold' if s else 'font-weight: bold' for s in styles]
             return styles
