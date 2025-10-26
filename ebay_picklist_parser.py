@@ -14,6 +14,8 @@ for key, default in {
     "picklist_text": "",
     "parsed_df": None,
     "summary_dict": {},
+    "summary_text": "",
+    "buyer_info": {},
     "theme": "light",
     "highlight_threshold": 1,
 }.items():
@@ -39,7 +41,7 @@ def parse_picklist(text):
     card_pattern = re.compile(r"Select Your Card:\s*([\d/]+)\s+([^(]+)\(([^)]+)\)")
 
     cards_by_buyer = defaultdict(list)
-    buyer_info = {}  # Name + Shipping address
+    buyer_info = {}
     current_buyer = None
     current_order = None
     lines = text.splitlines()
@@ -47,60 +49,56 @@ def parse_picklist(text):
     for i, line in enumerate(lines):
         line = line.strip()
 
-        # Detect order ID
+        # Detect order number
         order_match = order_pattern.search(line)
         if order_match:
             current_order = order_match.group(1)
-            continue
 
-        # Detect buyer
-        if buyer_pattern.match(line) and not line.startswith("Pokemon"):
+        # Detect buyer username
+        elif buyer_pattern.match(line) and not line.startswith("Pokemon"):
             current_buyer = line
-            # Extract Name and Shipping Address (line after the integer-only line)
-            if i >= 2 and lines[i-1].strip().isdigit():
-                buyer_name_address = lines[i].strip()
-            else:
-                buyer_name_address = "-"
-            buyer_info[current_buyer] = buyer_name_address
-            continue
 
-        # Detect Quantity line (two lines above "Select Your Card")
-        if card_pattern.search(line):
+        # Detect card lines
+        card_match = card_pattern.search(line)
+        if card_match and current_buyer:
+            number, name, variation = card_match.groups()
+
+            # Quantity is 2 lines above "Select Your Card:"
+            quantity = 1
             if i >= 2:
-                qty_line = lines[i-2].strip()
+                qty_line = lines[i - 2].strip()
                 qty_match = re.search(r"Quantity:\s*(\d+)", qty_line)
-                quantity = int(qty_match.group(1)) if qty_match else 1
-            else:
-                quantity = 1
+                if qty_match:
+                    quantity = int(qty_match.group(1))
 
-            card_match = card_pattern.search(line)
-            if card_match and current_buyer:
-                number, name, variation = card_match.groups()
-                cards_by_buyer[current_buyer].append({
-                    "order": current_order,
-                    "card": f"{number.strip()} {name.strip()}",
-                    "variation": variation.strip(),
-                    "quantity": quantity,
-                })
+            cards_by_buyer[current_buyer].append({
+                "order": current_order,
+                "card": f"{number.strip()} {name.strip()}",  # combine number + name
+                "variation": variation.strip(),
+                "quantity": quantity
+            })
 
-    # Build summary dictionary and DataFrame
+        # Detect Name + Shipping Address (line after single integer)
+        if current_buyer and re.match(r"^\d+$", line.strip()):
+            if i + 1 < len(lines):
+                buyer_info[current_buyer] = lines[i + 1].strip()
+
     summary_dict = {}
     summary_text = ""
-
     for buyer, cards in cards_by_buyer.items():
-        grouped = Counter((c["card"], c["variation"]) for c in cards)
+        grouped = Counter((c["card"], c["variation"], c["order"], c["quantity"]) for c in cards)
         summary_list = []
-        for (card, variation), qty in grouped.items():
+        for (card, variation, order, quantity), _ in grouped.items():
             summary_list.append({
-                "Order": next((c["order"] for c in cards if c["card"] == card), ""),
+                "Order": order,
                 "Card": card,
                 "Variation": variation,
-                "Quantity": qty,
+                "Quantity": quantity
             })
         summary_dict[buyer] = summary_list
 
-        # Plain text summary
-        summary_text += f"\n👤 {buyer}: {buyer_info.get(buyer,'-')}\n" + "-"*40 + "\n"
+        # Prepare plain text summary
+        summary_text += f"\n👤 {buyer}\n" + "-"*40 + "\n"
         order_ids = sorted({c['order'] for c in cards if c['order']})
         if order_ids:
             summary_text += f"Orders: {', '.join(order_ids)}\n"
@@ -109,11 +107,10 @@ def parse_picklist(text):
         summary_text += "\n"
 
     if not summary_dict:
-        return None, {}, ""
+        return None, {}, "", {}
 
     df = pd.DataFrame([item for items in summary_dict.values() for item in items])
-
-    return df, summary_dict, summary_text.strip()
+    return df, summary_dict, summary_text.strip(), buyer_info
 
 # --- TEXT INPUT ---
 picklist_text = st.text_area(
@@ -126,40 +123,44 @@ st.session_state.picklist_text = picklist_text
 
 # --- AUTO-PARSE WHEN TEXT CHANGES ---
 if picklist_text.strip():
-    df, summary_dict, summary_text = parse_picklist(picklist_text)
+    df, summary_dict, summary_text, buyer_info = parse_picklist(picklist_text)
     st.session_state.parsed_df = df
     st.session_state.summary_dict = summary_dict
     st.session_state.summary_text = summary_text
+    st.session_state.buyer_info = buyer_info
 
 # --- SHOW RESULTS IF AVAILABLE ---
 if st.session_state.parsed_df is not None:
     df = st.session_state.parsed_df
     summary_dict = st.session_state.summary_dict
     summary_text = st.session_state.summary_text
+    buyer_info = st.session_state.buyer_info
 
-    st.subheader("📊 Parsed Data")
-    with st.expander("Show Parsed Data", expanded=False):  # collapsed by default
-
-        # --- HIGHLIGHT FUNCTION BASED ON VARIATION AND QUANTITY ---
+    st.subheader("📊 Parsed Data (collapsed by default)")
+    with st.expander("Show Parsed Data", expanded=False):
+        # Highlight function
         def highlight_cards(row):
-            style = ['']*len(row)
-            # Background color by variation
-            if str(row['Variation']).lower() == "non-holo":
-                style = ['background-color: #ff9999']*len(row)
-            elif str(row['Variation']).lower() == "holo rare":
-                style = ['background-color: #99ccff']*len(row)
-            # Bold if Quantity > 1
+            colors = ['' for _ in row]
+            var_lower = str(row['Variation']).lower()
+            if var_lower == "non-holo":
+                colors = ['background-color: #ff9999' for _ in row]  # red
+            elif var_lower == "holo rare":
+                colors = ['background-color: #add8e6' for _ in row]  # blue
+            # Bold if quantity > 1
             if row['Quantity'] > 1:
-                style = [s + '; font-weight: bold' for s in style]
-            return style
+                colors = [f'{c}; font-weight: bold' if c else 'font-weight: bold' for c in colors]
+            return colors
 
+        # Reorder columns: Order, Card, Variation, Quantity
+        df = df[['Order', 'Card', 'Variation', 'Quantity']]
         styled_df = df.style.apply(highlight_cards, axis=1)
         st.dataframe(styled_df, use_container_width=True)
 
-    st.subheader("📦 Per-Buyer Packing Summary (Collapsible)")
+    st.subheader("📦 Per-Buyer Packing Summary (uncollapsed by default)")
     for buyer, items in summary_dict.items():
-        with st.expander(f"👤 {buyer} ({len(items)} items): {buyer_info.get(buyer,'-')}", expanded=True):  # uncollapsed
-            buyer_df = pd.DataFrame(items)
+        header_info = buyer_info.get(buyer, '-')
+        with st.expander(f"👤 {buyer} ({len(items)} items): {header_info}", expanded=True):
+            buyer_df = pd.DataFrame(items)[['Order', 'Card', 'Variation', 'Quantity']]
             styled_buyer_df = buyer_df.style.apply(highlight_cards, axis=1)
             st.dataframe(styled_buyer_df, use_container_width=True)
 
@@ -187,4 +188,5 @@ if st.button("🧹 Clear All Data"):
     st.session_state.parsed_df = None
     st.session_state.summary_dict = {}
     st.session_state.summary_text = ""
+    st.session_state.buyer_info = {}
     st.experimental_rerun()
