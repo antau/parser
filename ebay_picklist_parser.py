@@ -81,9 +81,8 @@ def parse_picklist(text):
             total_qty = sum(c["quantity"] for c in cards if c["number"] == number and c["variation"] == variation)
             summary_list.append({
                 "Order": next((c["order"] for c in cards if c["number"] == number), ""),
-                "Card Number": number,
-                "Card Name": name,
-                "Variation": variation,
+                "Card": f"{number.strip()} {name.strip()}",
+                "Variation": variation.strip(),
                 "Quantity": total_qty
             })
         summary_dict[buyer] = summary_list
@@ -94,7 +93,7 @@ def parse_picklist(text):
         if order_ids:
             summary_text += f"Orders: {', '.join(order_ids)}\n"
         for item in summary_list:
-            summary_text += f"• {item['Card Number']} {item['Card Name']} ({item['Variation']}) ×{item['Quantity']}\n"
+            summary_text += f"• {item['Card']} ({item['Variation']}) ×{item['Quantity']}\n"
         summary_text += "\n"
 
     if not summary_dict:
@@ -102,9 +101,8 @@ def parse_picklist(text):
 
     df = pd.DataFrame([item for items in summary_dict.values() for item in items])
 
-    # Combine Card Number and Card Name
-    df['Card'] = df['Card Number'].str.strip() + " " + df['Card Name'].str.strip()
-    df.drop(columns=['Card Number', 'Card Name'], inplace=True)
+    # Reorder columns: Order, Card, Variation, Quantity
+    df = df[['Order', 'Card', 'Variation', 'Quantity']]
 
     return df, summary_dict, summary_text.strip()
 
@@ -152,8 +150,7 @@ if st.session_state.parsed_df is not None:
     for buyer, items in summary_dict.items():
         with st.expander(f"👤 {buyer} ({len(items)} items)"):
             buyer_df = pd.DataFrame(items)
-            buyer_df['Card'] = buyer_df['Card Number'].str.strip() + " " + buyer_df['Card Name'].str.strip()
-            buyer_df.drop(columns=['Card Number', 'Card Name'], inplace=True)
+            buyer_df = buyer_df[['Order', 'Card', 'Variation', 'Quantity']]
             styled_buyer_df = buyer_df.style.apply(highlight_cards, axis=1)
             st.dataframe(styled_buyer_df, use_container_width=True)
 
