@@ -14,17 +14,15 @@ for key, default in {
     "picklist_text": "",
     "parsed_df": None,
     "summary_dict": {},
-    "theme": "light",
+    "summary_text": "",
+    "buyer_info": {},
     "highlight_threshold": 1,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
 
-# --- THEME TOGGLE ---
+# --- SETTINGS ---
 st.sidebar.title("Settings")
-theme = st.sidebar.radio("Theme:", ["Light", "Dark"])
-st.session_state.theme = theme.lower()
-
 highlight_threshold = st.sidebar.number_input(
     "Highlight cards with quantity ≥",
     min_value=1,
@@ -39,26 +37,47 @@ def parse_picklist(text):
     buyer_pattern = re.compile(r"^[a-zA-Z0-9_-]+$")
     card_pattern = re.compile(r"Select Your Card:\s*([\d/]+)\s+([^(]+)\(([^)]+)\)")
     qty_pattern = re.compile(r"Quantity:\s*(\d+)")
-    
+
     cards_by_buyer = defaultdict(list)
+    buyer_info = {}
     current_buyer = None
     current_order = None
 
-    for i, line in enumerate(lines):
-        line = line.strip()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
         if not line:
+            i += 1
             continue
+
+        # Detect order
         order_match = order_pattern.search(line)
         if order_match:
             current_order = order_match.group(0)
-            continue
-        elif buyer_pattern.match(line) and not line.startswith("Pokemon"):
-            current_buyer = line
+            i += 1
             continue
 
+        # Detect buyer
+        if buyer_pattern.match(line) and not line.startswith("Pokemon"):
+            current_buyer = line
+            i += 1
+            continue
+
+        # Detect buyer's Name & Address
+        if line.startswith("\t") and line.strip().isdigit() and current_buyer:
+            addr_lines = []
+            j = i + 1
+            while j < len(lines) and lines[j].strip():
+                addr_lines.append(lines[j].strip())
+                j += 1
+            buyer_info[current_buyer] = " | ".join(addr_lines) if addr_lines else "-"
+            i = j
+            continue
+
+        # Detect card
         card_match = card_pattern.search(line)
         if card_match and current_buyer:
-            # Look backwards to find the nearest "Item no." line
+            # Look backwards for nearest "Item no." line to get Quantity
             qty = 1
             for j in range(i-1, -1, -1):
                 prev_line = lines[j].strip()
@@ -74,30 +93,23 @@ def parse_picklist(text):
                 "Variation": variation.strip(),
                 "Quantity": qty
             })
+        i += 1
 
+    # Build summary_dict
     summary_dict = {}
     summary_text = ""
     for buyer, cards in cards_by_buyer.items():
-        grouped = Counter((c["Card"], c["Variation"], c["Order"], c["Quantity"]) for c in cards)
-        summary_list = []
-        for (card, variation, order, qty), _ in grouped.items():
-            summary_list.append({
-                "Order": order,
-                "Card": card,
-                "Variation": variation,
-                "Quantity": qty
-            })
-        summary_dict[buyer] = summary_list
+        summary_dict[buyer] = cards
         summary_text += f"\n👤 {buyer}\n" + "-"*40 + "\n"
-        for item in summary_list:
+        for item in cards:
             summary_text += f"• {item['Card']} ({item['Variation']}) ×{item['Quantity']}\n"
         summary_text += "\n"
 
     if not summary_dict:
-        return None, {}, ""
+        return None, {}, "", {}
 
     df = pd.DataFrame([item for items in summary_dict.values() for item in items])
-    return df, summary_dict, summary_text.strip()
+    return df, summary_dict, summary_text.strip(), buyer_info
 
 # --- TEXT INPUT ---
 picklist_text = st.text_area(
@@ -110,38 +122,43 @@ st.session_state.picklist_text = picklist_text
 
 # --- AUTO-PARSE WHEN TEXT CHANGES ---
 if picklist_text.strip():
-    df, summary_dict, summary_text = parse_picklist(picklist_text)
+    df, summary_dict, summary_text, buyer_info = parse_picklist(picklist_text)
     st.session_state.parsed_df = df
     st.session_state.summary_dict = summary_dict
     st.session_state.summary_text = summary_text
+    st.session_state.buyer_info = buyer_info
 
-# --- SHOW RESULTS IF AVAILABLE ---
+# --- HIGHLIGHT FUNCTION ---
+def highlight_cards(row):
+    colors = [""] * len(row)
+    variation = row["Variation"].lower()
+    if variation == "non-holo":
+        colors = ["background-color: red"] * len(row)
+    elif variation == "holo rare":
+        colors = ["background-color: lightblue"] * len(row)
+    # Bold if quantity > highlight threshold
+    if row["Quantity"] > 1:
+        colors = [f"{c}; font-weight: bold" if c else "font-weight: bold" for c in colors]
+    return colors
+
+# --- DISPLAY RESULTS ---
 if st.session_state.parsed_df is not None:
     df = st.session_state.parsed_df
     summary_dict = st.session_state.summary_dict
     summary_text = st.session_state.summary_text
+    buyer_info = st.session_state.buyer_info
 
     st.subheader("📊 Parsed Data (Collapsed by Default)")
-    with st.expander("Show Parsed Data"):
-        # --- HIGHLIGHT FUNCTION ---
-        def highlight_cards(row):
-            colors = [''] * len(row)
-            var = row['Variation'].lower()
-            if var == "non-holo":
-                colors = ['background-color: #ff9999'] * len(row)
-            elif var == "holo rare":
-                colors = ['background-color: #99ccff'] * len(row)
-            # Bold if Quantity > threshold
-            if row['Quantity'] > st.session_state.highlight_threshold:
-                colors = [f'{c}; font-weight: bold' if c else 'font-weight: bold' for c in colors]
-            return colors
-
+    with st.expander("Show Parsed Data", expanded=False):
         styled_df = df.style.apply(highlight_cards, axis=1)
         st.dataframe(styled_df, use_container_width=True)
 
     st.subheader("📦 Per-Buyer Packing Summary (Expanded by Default)")
     for buyer, items in summary_dict.items():
-        with st.expander(f"👤 {buyer} ({len(items)} items)", expanded=True):
+        header_text = f"👤 {buyer} ({len(items)} items)"
+        if buyer in buyer_info:
+            header_text += f": {buyer_info[buyer]}"
+        with st.expander(header_text, expanded=True):
             buyer_df = pd.DataFrame(items)
             styled_buyer_df = buyer_df.style.apply(highlight_cards, axis=1)
             st.dataframe(styled_buyer_df, use_container_width=True)
@@ -170,4 +187,5 @@ if st.button("🧹 Clear All Data"):
     st.session_state.parsed_df = None
     st.session_state.summary_dict = {}
     st.session_state.summary_text = ""
+    st.session_state.buyer_info = {}
     st.experimental_rerun()
