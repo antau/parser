@@ -3,13 +3,11 @@ import streamlit as st
 from collections import defaultdict
 import pandas as pd
 
-st.title("Picklist Parser")
+st.set_page_config(page_title="Picklist Parser", page_icon="🃏", layout="wide")
+st.title("🃏 Picklist Parser")
 
-# --- Input text area ---
+# --- Input ---
 picklist_text = st.text_area("Paste your picklist here", height=500)
-
-# --- Highlight threshold ---
-highlight_threshold = st.sidebar.number_input("Highlight cards with Quantity ≥", min_value=1, value=1)
 
 if picklist_text:
     # --- Regex patterns ---
@@ -52,7 +50,7 @@ if picklist_text:
         if qty_match:
             quantity = int(qty_match.group(1))
 
-            # Look ahead for card line
+            # Look ahead for the card line
             j = i + 1
             while j < len(lines):
                 card_match = card_pattern.search(lines[j])
@@ -79,42 +77,24 @@ if picklist_text:
         elif row['Variation'] == "Holo Rare":
             color = "#cce5ff"  # light blue
         styles = [f"background-color: {color}" if color else "" for _ in row]
-        if row['Quantity'] >= highlight_threshold:
+        if row['Quantity'] > 1:  # Bold only if Quantity > 1
             styles = [s + "; font-weight: bold" if s else "font-weight: bold" for s in styles]
         return styles
 
     # --- Display per-buyer tables ---
     st.subheader("Parsed Picklist")
-    all_summary_text = ""
     for buyer, items in cards_by_buyer.items():
         with st.expander(f"Buyer: {buyer} ({len(items)} items)", expanded=True):
             df_buyer = pd.DataFrame(items)
             st.dataframe(df_buyer.style.apply(highlight_cards, axis=1), use_container_width=True)
 
-            # Prepare summary text
-            buyer_summary = f"👤 {buyer}\n{'-'*40}\n"
-            orders = sorted({c['Order'] for c in items if c['Order']})
-            if orders:
-                buyer_summary += f"Orders: {', '.join(orders)}\n"
-            for c in items:
-                buyer_summary += f"• {c['Card']} ({c['Variation']}) ×{c['Quantity']}\n"
-            all_summary_text += buyer_summary + "\n"
-
-    # --- CSV download ---
+    # --- Full CSV download ---
     all_items = [item for items in cards_by_buyer.values() for item in items]
     df_all = pd.DataFrame(all_items)
-    csv_data = df_all.to_csv(index=False).encode('utf-8')
+    csv = df_all.to_csv(index=False).encode('utf-8')
     st.download_button(
         label="⬇️ Download Full CSV",
-        data=csv_data,
+        data=csv,
         file_name="picklist_parsed.csv",
         mime="text/csv"
-    )
-
-    # --- Summary text download ---
-    st.download_button(
-        label="📋 Download Per-Buyer Summary",
-        data=all_summary_text.encode('utf-8'),
-        file_name="picklist_summary.txt",
-        mime="text/plain"
     )
