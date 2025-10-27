@@ -86,7 +86,8 @@ if picklist_text:
     for buyer, items in cards_by_buyer.items():
         with st.expander(f"Buyer: {buyer} ({len(items)} items)", expanded=True):
             df_buyer = pd.DataFrame(items)
-            st.dataframe(df_buyer.style.apply(highlight_cards, axis=1), use_container_width=True)
+            # No fixed height; table expands naturally
+            st.dataframe(df_buyer.style.apply(highlight_cards, axis=1))
 
     # --- Full CSV download ---
     all_items = [item for items in cards_by_buyer.values() for item in items]
