@@ -37,6 +37,7 @@ def parse_picklist(text):
     buyer_info = {}
     buyer_name = None
     current_order = None
+    last_quantity = 1  # temporary store for Quantity
 
     i = 0
     while i < len(lines):
@@ -46,26 +47,22 @@ def parse_picklist(text):
         if re.match(r"\d{2}-\d{5}-\d{5}", line):
             current_order = line
 
-        # Detect Quantity line (look-ahead for card)
+        # Detect Quantity lines and store for next card
         qty_match = item_pattern.search(line)
         if qty_match:
-            quantity = int(qty_match.group(1))
+            last_quantity = int(qty_match.group(1))
 
-            # Look ahead for card line (skip blank lines)
-            j = i + 1
-            while j < len(lines) and not lines[j].strip():
-                j += 1
-            if j < len(lines):
-                card_match = card_pattern.search(lines[j])
-                if card_match and buyer_name:
-                    card_number, card_name, variation = card_match.groups()
-                    cards_by_buyer[buyer_name].append({
-                        "Order": current_order,
-                        "Card": f"{card_number} {card_name}",
-                        "Variation": variation,
-                        "Quantity": quantity
-                    })
-            i = j  # skip to card line after processing
+        # Detect Card lines
+        card_match = card_pattern.search(line)
+        if card_match and buyer_name:
+            card_number, card_name, variation = card_match.groups()
+            cards_by_buyer[buyer_name].append({
+                "Order": current_order,
+                "Card": f"{card_number} {card_name}",
+                "Variation": variation,
+                "Quantity": last_quantity
+            })
+            last_quantity = 1  # reset quantity after using
 
         # Detect Buyer Name and Address block
         elif line and not line.startswith("Pokemon") and not line.startswith("Item no") and not line.startswith("Value") and not re.match(r"\d{2}-\d{5}-\d{5}", line):
