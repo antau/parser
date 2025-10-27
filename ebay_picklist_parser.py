@@ -190,13 +190,14 @@ if picklist_text:
             "Card 3": card_list[2]
         })
 
-    # --- Buyer summary table (without # column) ---
+    # --- Buyer summary table (with # column, no unnamed index) ---
     if summary_rows:
         st.subheader("Buyer Summary Table")
         df_summary = pd.DataFrame(summary_rows)
-        st.dataframe(df_summary, use_container_width=True)
+        df_summary.insert(0, "#", range(1, len(df_summary) + 1))
+        st.dataframe(df_summary, use_container_width=True, hide_index=True)
 
-        # Summary CSV download
+        # CSV download
         csv_summary = df_summary.to_csv(index=False).encode("utf-8")
         st.download_button(
             label="⬇️ Download Buyer Summary CSV",
