@@ -3,8 +3,7 @@ import streamlit as st
 from collections import defaultdict
 import pandas as pd
 
-st.set_page_config(page_title="Picklist Parser", page_icon="🃏", layout="wide")
-st.title("🃏 Picklist Parser")
+st.title("Picklist Parser")
 
 # --- Input ---
 picklist_text = st.text_area("Paste your picklist here", height=500)
@@ -14,12 +13,12 @@ if picklist_text:
     order_pattern = re.compile(r"\b\d{2}-\d{5}-\d{5}\b")
     quantity_pattern = re.compile(r"Item no\.: .* Quantity: (\d+)", re.IGNORECASE)
     card_pattern = re.compile(r"Select Your Card: (\d+/\d+) (.+?) \((.+?)\)")
-    
+
     cards_by_buyer = defaultdict(list)
     current_order = None
     current_buyer = None
     lines = picklist_text.splitlines()
-    
+
     i = 0
     while i < len(lines):
         line = lines[i].strip()
@@ -50,7 +49,7 @@ if picklist_text:
         if qty_match:
             quantity = int(qty_match.group(1))
 
-            # Look ahead for the card line
+            # Look ahead for card line
             j = i + 1
             while j < len(lines):
                 card_match = card_pattern.search(lines[j])
@@ -69,54 +68,43 @@ if picklist_text:
 
         i += 1
 
-    # --- Function to render HTML table with highlights, fixed column widths, and row numbers ---
-    def render_table_html(df):
-        df.insert(0, "#", range(1, len(df) + 1))
-        col_widths = {
-            "#": "40px",
-            "Order": "150px",
-            "Card": "250px",
-            "Variation": "150px",
-            "Quantity": "80px"
-        }
-        html = '<table style="border-collapse: collapse; width: 100%;">'
-        html += "<tr>"
-        for col in df.columns:
-            width = col_widths.get(col, "150px")
-            html += f'<th style="border: 1px solid black; padding: 4px; text-align: left; width:{width};">{col}</th>'
-        html += "</tr>"
-        for _, row in df.iterrows():
-            bg_color = ""
-            if row['Variation'] == "Non-Holo":
-                bg_color = "#ff9999"
-            elif row['Variation'] == "Holo Rare":
-                bg_color = "#99ccff"
-
-            font_weight = "bold" if row['Quantity'] > 1 else "normal"
-            html += f'<tr style="background-color:{bg_color}; font-weight:{font_weight};">'
-            for col in df.columns:
-                width = col_widths.get(col, "150px")
-                html += f'<td style="border: 1px solid black; padding: 4px; width:{width};">{row[col]}</td>'
-            html += "</tr>"
-        html += "</table>"
-        return html
-
     # --- Display per-buyer tables ---
     st.subheader("Parsed Picklist")
+
     for buyer, items in cards_by_buyer.items():
         df_buyer = pd.DataFrame(items)
-        total_cards = int(df_buyer['Quantity'].sum())  # ensure it's an int
-        num_items = len(df_buyer)
-        expander_label = f"Buyer: {buyer} ({num_items} items, {total_cards} total cards)"
-        with st.expander(expander_label, expanded=True):
-            st.markdown(render_table_html(df_buyer), unsafe_allow_html=True)
+        df_buyer.insert(0, "#", range(1, len(df_buyer)+1))  # Add incremental #
 
-    # --- Full CSV download ---
+        # Calculate total cards
+        total_cards = df_buyer['Quantity'].sum()
+        num_items = len(df_buyer)
+
+        # Expander label
+        expander_label = f"{num_items} items, {total_cards} total cards - {buyer}"
+
+        # Highlight function
+        def highlight_cards(row):
+            styles = [""] * len(row)
+            if row["Quantity"] > 1:
+                styles = ["font-weight: bold" for _ in row]
+            return styles
+
+        with st.expander(expander_label, expanded=False):
+            st.dataframe(
+                df_buyer.style.apply(highlight_cards, axis=1).set_table_styles(
+                    [{"selector": "th, td", "props": [("min-width", "120px"), ("max-width", "250px")]}]
+                ),
+                use_container_width=True
+            )
+
+    # --- Download CSV ---
     all_items = [item for items in cards_by_buyer.values() for item in items]
     df_all = pd.DataFrame(all_items)
+    df_all.insert(0, "#", range(1, len(df_all)+1))
     csv = df_all.to_csv(index=False).encode('utf-8')
+
     st.download_button(
-        label="⬇️ Download Full CSV",
+        label="Download Full CSV",
         data=csv,
         file_name="picklist_parsed.csv",
         mime="text/csv"
