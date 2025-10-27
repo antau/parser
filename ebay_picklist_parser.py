@@ -169,13 +169,12 @@ if picklist_text:
 
         # --- Collect for summary table ---
         shipping_name = ""
-        shipping_address_first = ""
+        shipping_address_full = ""
         if ship_label:
             name_match = re.match(r"^(.*?)\s*\((.*)\)$", ship_label)
             if name_match:
                 shipping_name = name_match.group(1).strip()
-                address_full = name_match.group(2).strip()
-                shipping_address_first = address_full.split(",")[0].strip() if address_full else ""
+                shipping_address_full = name_match.group(2).strip()
             else:
                 shipping_name = ship_label
         card_list = list(df_buyer["Card"].values)[:3]
@@ -183,7 +182,7 @@ if picklist_text:
             card_list.append("")
         summary_rows.append({
             "Shipping Name": shipping_name,
-            "Shipping Address": shipping_address_first,
+            "Shipping Address": shipping_address_full,
             "# of Items": num_items,
             "Total Cards": total_cards,
             "Card 1": card_list[0],
@@ -195,6 +194,7 @@ if picklist_text:
     if summary_rows:
         st.subheader("Buyer Summary Table")
         df_summary = pd.DataFrame(summary_rows)
+        df_summary.insert(0, "#", range(1, len(df_summary) + 1))
         st.dataframe(df_summary, use_container_width=True)
 
         # Summary CSV download
