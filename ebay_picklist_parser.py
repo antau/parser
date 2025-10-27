@@ -37,7 +37,7 @@ def parse_picklist(text):
     buyer_info = {}
     buyer_name = None
     current_order = None
-    last_quantity = 1  # temporary store for Quantity
+    last_quantity = 1  # store the most recent Quantity
 
     i = 0
     while i < len(lines):
@@ -47,7 +47,7 @@ def parse_picklist(text):
         if re.match(r"\d{2}-\d{5}-\d{5}", line):
             current_order = line
 
-        # Detect Quantity lines and store for next card
+        # Detect Quantity lines
         qty_match = item_pattern.search(line)
         if qty_match:
             last_quantity = int(qty_match.group(1))
@@ -62,15 +62,15 @@ def parse_picklist(text):
                 "Variation": variation,
                 "Quantity": last_quantity
             })
-            last_quantity = 1  # reset quantity after using
+            last_quantity = 1  # reset after use
 
         # Detect Buyer Name and Address block
-        elif line and not line.startswith("Pokemon") and not line.startswith("Item no") and not line.startswith("Value") and not re.match(r"\d{2}-\d{5}-\d{5}", line):
+        elif line and not line.startswith(("Pokemon", "Item no", "Value")) and not re.match(r"\d{2}-\d{5}-\d{5}", line):
             buyer_name_line = line
             buyer_address_lines = []
             k = i + 1
             while k < len(lines) and lines[k].strip() and not re.match(r"\d{2}-\d{5}-\d{5}", lines[k].strip()):
-                if re.match(r"\d+\s*$", lines[k].strip()):  # skip lines with just numbers
+                if re.match(r"\d+\s*$", lines[k].strip()):
                     k += 1
                     continue
                 buyer_address_lines.append(lines[k].strip())
@@ -99,7 +99,6 @@ def parse_picklist(text):
         summary_dict[buyer] = summary_list
         buyer_info[buyer] = buyer
 
-        # Build summary text
         summary_text += f"\n👤 {buyer}\n{'-'*40}\n"
         orders = sorted({c['Order'] for c in cards if c['Order']})
         if orders:
@@ -132,13 +131,12 @@ if st.session_state.parsed_df is not None:
     buyer_info = st.session_state.buyer_info
     summary_text = st.session_state.summary_text
 
-    # --- HIGHLIGHT FUNCTION ---
     def highlight_cards(row):
         color = ""
         if row['Variation'] == "Non-Holo":
-            color = "#ff9999"  # red
+            color = "#ff9999"
         elif row['Variation'] == "Holo Rare":
-            color = "#99ccff"  # blue
+            color = "#99ccff"
         styles = [f"background-color: {color}" if color else "" for _ in row]
         if row['Quantity'] >= st.session_state.highlight_threshold:
             styles = [s + "; font-weight: bold" if s else "font-weight: bold" for s in styles]
@@ -153,7 +151,6 @@ if st.session_state.parsed_df is not None:
             buyer_df = pd.DataFrame(items)
             st.dataframe(buyer_df.style.apply(highlight_cards, axis=1), use_container_width=True)
 
-    # --- DOWNLOAD BUTTONS ---
     col1, col2 = st.columns(2)
     col1.download_button("⬇️ Download Parsed CSV", df.to_csv(index=False).encode("utf-8"), file_name="parsed.csv")
     col2.download_button("📋 Download Summary", summary_text.encode("utf-8"), file_name="summary.txt")
