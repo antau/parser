@@ -71,10 +71,7 @@ if picklist_text:
 
     # --- Function to render HTML table with highlights, fixed column widths, and row numbers ---
     def render_table_html(df):
-        # Insert row numbers starting at 1
         df.insert(0, "#", range(1, len(df) + 1))
-
-        # Define column widths
         col_widths = {
             "#": "40px",
             "Order": "150px",
@@ -83,13 +80,11 @@ if picklist_text:
             "Quantity": "80px"
         }
         html = '<table style="border-collapse: collapse; width: 100%;">'
-        # Header
         html += "<tr>"
         for col in df.columns:
             width = col_widths.get(col, "150px")
             html += f'<th style="border: 1px solid black; padding: 4px; text-align: left; width:{width};">{col}</th>'
         html += "</tr>"
-        # Rows
         for _, row in df.iterrows():
             bg_color = ""
             if row['Variation'] == "Non-Holo":
@@ -110,9 +105,10 @@ if picklist_text:
     st.subheader("Parsed Picklist")
     for buyer, items in cards_by_buyer.items():
         df_buyer = pd.DataFrame(items)
-        total_cards = df_buyer['Quantity'].sum()
+        total_cards = int(df_buyer['Quantity'].sum())  # ensure it's an int
         num_items = len(df_buyer)
-        with st.expander(f"Buyer: {buyer} ({num_items} items, {total_cards} total cards)", expanded=True):
+        expander_label = f"Buyer: {buyer} ({num_items} items, {total_cards} total cards)"
+        with st.expander(expander_label, expanded=True):
             st.markdown(render_table_html(df_buyer), unsafe_allow_html=True)
 
     # --- Full CSV download ---
