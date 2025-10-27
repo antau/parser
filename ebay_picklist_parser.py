@@ -69,10 +69,14 @@ if picklist_text:
 
         i += 1
 
-    # --- Function to render HTML table with highlights and fixed column widths ---
+    # --- Function to render HTML table with highlights, fixed column widths, and row numbers ---
     def render_table_html(df):
+        # Insert row numbers starting at 1
+        df.insert(0, "#", range(1, len(df) + 1))
+
         # Define column widths (adjust as needed)
         col_widths = {
+            "#": "40px",
             "Order": "150px",
             "Card": "250px",
             "Variation": "150px",
