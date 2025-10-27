@@ -14,15 +14,14 @@ if picklist_text:
     order_pattern = re.compile(r"\b\d{2}-\d{5}-\d{5}\b")
     quantity_pattern = re.compile(r"Item no\.: .* Quantity: (\d+)", re.IGNORECASE)
     card_pattern = re.compile(r"Select Your Card: (\d+/\d+) (.+?) \((.+?)\)")
+    shipping_start_pattern = re.compile(r"^[\t ]*\d+[\t ]*$")  # Number line with tabs/spaces
 
-    # Detect number lines (preceding shipping info) with tabs/spaces
-    shipping_start_pattern = re.compile(r"^[\t ]*\d+[\t ]*$")
-    
     cards_by_buyer = defaultdict(list)
+    shipping_info = {}
     current_order = None
     current_buyer = None
     lines = picklist_text.splitlines()
-    
+
     i = 0
     while i < len(lines):
         line = lines[i].strip()
@@ -70,19 +69,31 @@ if picklist_text:
                 j += 1
             i = j  # skip to card line after processing
 
-        # Detect shipping number line (skip shipping info)
+        # Detect shipping info (number line → name + address)
         elif shipping_start_pattern.match(line):
-            # Skip shipping name and address lines
+            shipping_name = ""
+            shipping_address_lines = []
             j = i + 1
-            while j < len(lines) and lines[j].strip() == "":
-                j += 1  # skip blank lines
-            # Skip shipping name
+
+            # Find shipping name
+            while j < len(lines) and not lines[j].strip():
+                j += 1
             if j < len(lines):
+                shipping_name = lines[j].strip()
                 j += 1
-            # Skip shipping address until next empty line
-            while j < len(lines) and lines[j].strip():
+
+            # Find shipping address (until blank or next order)
+            while j < len(lines):
+                next_line = lines[j].strip()
+                if not next_line or order_pattern.match(next_line):
+                    break
+                shipping_address_lines.append(next_line)
                 j += 1
-            i = j - 1  # skip processed lines
+
+            shipping_address = ", ".join(shipping_address_lines)
+            if current_buyer:
+                shipping_info[current_buyer] = f"{shipping_name}, {shipping_address}"
+            i = j - 1
 
         i += 1
 
@@ -121,9 +132,12 @@ if picklist_text:
     st.subheader("Parsed Picklist")
     for buyer, items in cards_by_buyer.items():
         df_buyer = pd.DataFrame(items)
-        total_cards = int(df_buyer['Quantity'].sum())  # ensure it's an int
+        total_cards = int(df_buyer['Quantity'].sum())
         num_items = len(df_buyer)
+        shipping_label = shipping_info.get(buyer, "").strip(", ")
         expander_label = f"Buyer: {buyer} ({num_items} items, {total_cards} total cards)"
+        if shipping_label:
+            expander_label += f" – {shipping_label}"
         with st.expander(expander_label, expanded=True):
             st.markdown(render_table_html(df_buyer), unsafe_allow_html=True)
 
