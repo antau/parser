@@ -37,39 +37,37 @@ def parse_picklist(text):
     buyer_info = {}
     current_buyer = None
     current_order = None
-    qty = 1
 
     i = 0
     while i < len(lines):
         line = lines[i].strip()
 
-        # Detect Order
-        order_match = order_pattern.search(line)
-        if order_match:
-            current_order = order_match.group(0)
+        # Detect order lines
+        if order_pattern.match(line):
+            current_order = line
 
-        # Detect Buyer Name / Account
+        # Detect buyer name (exclude blank lines and system lines)
         elif line and not line.startswith("Pokemon") and not line.startswith("Item no.") and not line.startswith("Value"):
             current_buyer = line
 
-        # Detect Quantity
-        if line.startswith("Item no.:") and "Quantity:" in line:
-            qty_match = quantity_pattern.search(line)
-            qty = int(qty_match.group(1)) if qty_match else 1
+        # Detect Quantity lines
+        qty_match = quantity_pattern.search(line)
+        if qty_match:
+            quantity = int(qty_match.group(1))
 
-            # Look ahead for card line
+            # Look ahead for the Card line (skip blank lines)
             j = i + 1
             while j < len(lines) and not lines[j].strip():
                 j += 1
             if j < len(lines):
                 card_match = card_pattern.search(lines[j])
                 if card_match and current_buyer:
-                    number, name, variation = card_match.groups()
+                    card_number, card_name, variation = card_match.groups()
                     cards_by_buyer[current_buyer].append({
                         "Order": current_order,
-                        "Card": f"{number.strip()} {name.strip()}",
+                        "Card": f"{card_number.strip()} {card_name.strip()}",
                         "Variation": variation.strip(),
-                        "Quantity": qty
+                        "Quantity": quantity
                     })
             i = j  # skip processed card line
 
@@ -77,7 +75,7 @@ def parse_picklist(text):
         if re.match(r"^\t?\d+\s*$", line):
             info_lines = []
             j = i + 1
-            while j < len(lines) and lines[j].strip() != "" and not re.match(order_pattern, lines[j]):
+            while j < len(lines) and lines[j].strip() != "" and not order_pattern.match(lines[j]):
                 info_lines.append(lines[j].strip())
                 j += 1
             if info_lines:
