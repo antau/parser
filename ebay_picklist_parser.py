@@ -46,12 +46,12 @@ def parse_picklist(text):
         if re.match(r"\d{2}-\d{5}-\d{5}", line):
             current_order = line
 
-        # Detect Quantity line
+        # Detect Quantity line (look-ahead for card)
         qty_match = item_pattern.search(line)
         if qty_match:
             quantity = int(qty_match.group(1))
 
-            # Look ahead for the Card line (skip blank lines)
+            # Look ahead for card line (skip blank lines)
             j = i + 1
             while j < len(lines) and not lines[j].strip():
                 j += 1
@@ -73,7 +73,7 @@ def parse_picklist(text):
             buyer_address_lines = []
             k = i + 1
             while k < len(lines) and lines[k].strip() and not re.match(r"\d{2}-\d{5}-\d{5}", lines[k].strip()):
-                if re.match(r"\d+\s*$", lines[k].strip()):  # skip line with only numbers
+                if re.match(r"\d+\s*$", lines[k].strip()):  # skip lines with just numbers
                     k += 1
                     continue
                 buyer_address_lines.append(lines[k].strip())
@@ -82,11 +82,11 @@ def parse_picklist(text):
                 buyer_name = f"{buyer_name_line} ({', '.join(buyer_address_lines)})"
             else:
                 buyer_name = buyer_name_line
-            i = k - 1  # skip processed lines
+            i = k - 1
 
         i += 1
 
-    # Prepare summary dict and buyer info
+    # --- Prepare summary ---
     summary_dict = {}
     summary_text = ""
     for buyer, cards in cards_by_buyer.items():
@@ -100,8 +100,6 @@ def parse_picklist(text):
                 "Quantity": qty
             })
         summary_dict[buyer] = summary_list
-
-        # Buyer info (just the name/address)
         buyer_info[buyer] = buyer
 
         # Build summary text
