@@ -69,13 +69,21 @@ if picklist_text:
 
         i += 1
 
-    # --- Function to render HTML table with highlights ---
+    # --- Function to render HTML table with highlights and fixed column widths ---
     def render_table_html(df):
+        # Define column widths (adjust as needed)
+        col_widths = {
+            "Order": "150px",
+            "Card": "250px",
+            "Variation": "150px",
+            "Quantity": "80px"
+        }
         html = '<table style="border-collapse: collapse; width: 100%;">'
         # Header
         html += "<tr>"
         for col in df.columns:
-            html += f'<th style="border: 1px solid black; padding: 4px; text-align: left;">{col}</th>'
+            width = col_widths.get(col, "150px")
+            html += f'<th style="border: 1px solid black; padding: 4px; text-align: left; width:{width};">{col}</th>'
         html += "</tr>"
         # Rows
         for _, row in df.iterrows():
@@ -88,7 +96,8 @@ if picklist_text:
             font_weight = "bold" if row['Quantity'] > 1 else "normal"
             html += f'<tr style="background-color:{bg_color}; font-weight:{font_weight};">'
             for col in df.columns:
-                html += f'<td style="border: 1px solid black; padding: 4px;">{row[col]}</td>'
+                width = col_widths.get(col, "150px")
+                html += f'<td style="border: 1px solid black; padding: 4px; width:{width};">{row[col]}</td>'
             html += "</tr>"
         html += "</table>"
         return html
