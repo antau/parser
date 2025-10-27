@@ -90,10 +90,25 @@ if picklist_text:
             return styles
 
         with st.expander(expander_label, expanded=False):
+            st.markdown(
+                f"""
+                <style>
+                /* Set consistent column widths */
+                div[data-testid="stDataFrame"] table {{
+                    table-layout: fixed;
+                    width: 100%;
+                }}
+                div[data-testid="stDataFrame"] th, div[data-testid="stDataFrame"] td {{
+                    min-width: 120px;
+                    max-width: 250px;
+                    word-wrap: break-word;
+                }}
+                </style>
+                """,
+                unsafe_allow_html=True
+            )
             st.dataframe(
-                df_buyer.style.apply(highlight_cards, axis=1).set_table_styles(
-                    [{"selector": "th, td", "props": [("min-width", "120px"), ("max-width", "250px")]}]
-                ),
+                df_buyer.style.apply(highlight_cards, axis=1),
                 use_container_width=True
             )
 
