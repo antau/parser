@@ -69,25 +69,36 @@ if picklist_text:
 
         i += 1
 
-    # --- Highlight function ---
-    def highlight_cards(row):
-        color = ""
-        if row['Variation'] == "Non-Holo":
-            color = "#ffcccc"  # light red
-        elif row['Variation'] == "Holo Rare":
-            color = "#cce5ff"  # light blue
-        styles = [f"background-color: {color}" if color else "" for _ in row]
-        if row['Quantity'] > 1:  # Bold only if Quantity > 1
-            styles = [s + "; font-weight: bold" if s else "font-weight: bold" for s in styles]
-        return styles
+    # --- Function to render HTML table with highlights ---
+    def render_table_html(df):
+        html = '<table style="border-collapse: collapse; width: 100%;">'
+        # Header
+        html += "<tr>"
+        for col in df.columns:
+            html += f'<th style="border: 1px solid black; padding: 4px; text-align: left;">{col}</th>'
+        html += "</tr>"
+        # Rows
+        for _, row in df.iterrows():
+            bg_color = ""
+            if row['Variation'] == "Non-Holo":
+                bg_color = "#ff9999"  # red
+            elif row['Variation'] == "Holo Rare":
+                bg_color = "#99ccff"  # blue
+
+            font_weight = "bold" if row['Quantity'] > 1 else "normal"
+            html += f'<tr style="background-color:{bg_color}; font-weight:{font_weight};">'
+            for col in df.columns:
+                html += f'<td style="border: 1px solid black; padding: 4px;">{row[col]}</td>'
+            html += "</tr>"
+        html += "</table>"
+        return html
 
     # --- Display per-buyer tables ---
     st.subheader("Parsed Picklist")
     for buyer, items in cards_by_buyer.items():
         with st.expander(f"Buyer: {buyer} ({len(items)} items)", expanded=True):
             df_buyer = pd.DataFrame(items)
-            # No fixed height; table expands naturally
-            st.dataframe(df_buyer.style.apply(highlight_cards, axis=1))
+            st.markdown(render_table_html(df_buyer), unsafe_allow_html=True)
 
     # --- Full CSV download ---
     all_items = [item for items in cards_by_buyer.values() for item in items]
