@@ -74,7 +74,7 @@ if picklist_text:
         # Insert row numbers starting at 1
         df.insert(0, "#", range(1, len(df) + 1))
 
-        # Define column widths (adjust as needed)
+        # Define column widths
         col_widths = {
             "#": "40px",
             "Order": "150px",
@@ -93,9 +93,9 @@ if picklist_text:
         for _, row in df.iterrows():
             bg_color = ""
             if row['Variation'] == "Non-Holo":
-                bg_color = "#ff9999"  # red
+                bg_color = "#ff9999"
             elif row['Variation'] == "Holo Rare":
-                bg_color = "#99ccff"  # blue
+                bg_color = "#99ccff"
 
             font_weight = "bold" if row['Quantity'] > 1 else "normal"
             html += f'<tr style="background-color:{bg_color}; font-weight:{font_weight};">'
@@ -109,8 +109,10 @@ if picklist_text:
     # --- Display per-buyer tables ---
     st.subheader("Parsed Picklist")
     for buyer, items in cards_by_buyer.items():
-        with st.expander(f"Buyer: {buyer} ({len(items)} items)", expanded=True):
-            df_buyer = pd.DataFrame(items)
+        df_buyer = pd.DataFrame(items)
+        total_cards = df_buyer['Quantity'].sum()
+        num_items = len(df_buyer)
+        with st.expander(f"Buyer: {buyer} ({num_items} items, {total_cards} total cards)", expanded=True):
             st.markdown(render_table_html(df_buyer), unsafe_allow_html=True)
 
     # --- Full CSV download ---
