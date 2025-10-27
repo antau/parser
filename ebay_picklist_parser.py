@@ -15,14 +15,14 @@ if picklist_text:
     quantity_pattern = re.compile(r"Item no\.: .* Quantity: (\d+)", re.IGNORECASE)
     card_pattern = re.compile(r"Select Your Card: (\d+/\d+) (.+?) \((.+?)\)")
     shipping_start_pattern = re.compile(r"^\s*\d+\s*$")  # lines with just a number
-    
+
     cards_by_buyer = defaultdict(list)
     current_order = None
     current_buyer = None
     shipping_name = None
     shipping_address = None
     lines = picklist_text.splitlines()
-    
+
     i = 0
     while i < len(lines):
         line = lines[i].strip()
@@ -50,12 +50,10 @@ if picklist_text:
 
         # --- Detect Shipping Name/Address ---
         elif shipping_start_pattern.match(line):
-            # Next line: shipping name
             if i + 1 < len(lines):
                 shipping_name = lines[i + 1].strip()
             else:
                 shipping_name = ""
-            # Following lines until empty line: shipping address
             shipping_address_lines = []
             j = i + 2
             while j < len(lines):
@@ -82,9 +80,7 @@ if picklist_text:
                             "Order": current_order,
                             "Card": f"{card_number} {card_name}",
                             "Variation": variation,
-                            "Quantity": quantity,
-                            "Shipping Name": shipping_name,
-                            "Shipping Address": shipping_address
+                            "Quantity": quantity
                         })
                     break
                 j += 1
@@ -92,7 +88,7 @@ if picklist_text:
 
         i += 1
 
-    # --- Function to render HTML table with highlights, fixed column widths, and row numbers ---
+    # --- Function to render HTML table ---
     def render_table_html(df):
         df.insert(0, "#", range(1, len(df) + 1))
         col_widths = {
@@ -100,9 +96,7 @@ if picklist_text:
             "Order": "150px",
             "Card": "250px",
             "Variation": "150px",
-            "Quantity": "80px",
-            "Shipping Name": "200px",
-            "Shipping Address": "300px"
+            "Quantity": "80px"
         }
         html = '<table style="border-collapse: collapse; width: 100%;">'
         html += "<tr>"
@@ -126,13 +120,16 @@ if picklist_text:
         html += "</table>"
         return html
 
-    # --- Display per-buyer tables ---
+    # --- Display per-buyer tables with Shipping info in label ---
     st.subheader("Parsed Picklist")
     for buyer, items in cards_by_buyer.items():
         df_buyer = pd.DataFrame(items)
         total_cards = int(df_buyer['Quantity'].sum())
         num_items = len(df_buyer)
+        # Add Shipping Name and Address to expander label
         expander_label = f"Buyer: {buyer} ({num_items} items, {total_cards} total cards)"
+        if shipping_name or shipping_address:
+            expander_label += f" - Shipping: {shipping_name}, {shipping_address}"
         with st.expander(expander_label, expanded=True):
             st.markdown(render_table_html(df_buyer), unsafe_allow_html=True)
 
