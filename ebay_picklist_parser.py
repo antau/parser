@@ -13,40 +13,34 @@ if picklist_text:
     order_pattern = re.compile(r"\b\d{2}-\d{5}-\d{5}\b")
     quantity_pattern = re.compile(r"Item no\.: .* Quantity: (\d+)", re.IGNORECASE)
     card_pattern = re.compile(r"Select Your Card: (\d+/\d+) (.+?) \((.+?)\)")
-    # Matches a line that contains only digits (with any whitespace/tabs around)
     shipping_start_pattern = re.compile(r"^[\s]*\d+[\s]*$")
 
     # Data structures
-    cards_by_buyer = defaultdict(list)   # buyer_id -> list of cards
-    buyer_display = {}                   # buyer_id -> display label (username + address)
-    shipping_info = {}                   # buyer_id -> shipping name + address (for label)
+    cards_by_buyer = defaultdict(list)
+    buyer_display = {}
+    shipping_info = {}
 
     current_order = None
     current_buyer_id = None
     last_buyer_id_seen = None
 
-    # Normalize lines but keep raw for whitespace checks
     lines = picklist_text.splitlines()
     n = len(lines)
     i = 0
 
     while i < n:
         raw_line = lines[i]
-        # normalize line for easier checks (strip non-printing chars and whitespace ends)
         line = raw_line.strip()
 
-        # --- Order line (keep this first) ---
+        # --- Order line ---
         if order_pattern.search(line):
             current_order = line
             i += 1
             continue
 
-        # --- Shipping block detection MUST come BEFORE buyer detection ---
+        # --- Shipping block detection ---
         if shipping_start_pattern.match(raw_line) and not order_pattern.search(line):
-            # Attach to most recent buyer id (prefer current, else last seen)
             buyer_for_shipping = current_buyer_id if current_buyer_id else last_buyer_id_seen
-
-            # Find first non-empty line after the number -> shipping name
             j = i + 1
             while j < n and not lines[j].strip():
                 j += 1
@@ -56,7 +50,6 @@ if picklist_text:
                 shipping_name = lines[j].strip()
                 j += 1
 
-            # Collect address lines until blank, next order line, or next shipping-number line
             shipping_address_lines = []
             while j < n:
                 next_raw = lines[j]
@@ -73,14 +66,11 @@ if picklist_text:
                 else:
                     shipping_info[buyer_for_shipping] = shipping_name
 
-            # advance to the line after the shipping block
             i = j
             continue
 
-        # --- Buyer detection (heuristic) ---
-        # Only attempt buyer detection if this is not an Item/Value/Pokemon line and not empty
+        # --- Buyer detection ---
         if line and not line.startswith(("Pokemon", "Item no", "Value")) and not order_pattern.search(line):
-            # Collect buyer address lines until blank, order line, "Pokemon", "Item no", "Value", or shipping-number
             buyer_name_line = line
             buyer_address_lines = []
             j = i + 1
@@ -94,7 +84,7 @@ if picklist_text:
                     break
                 buyer_address_lines.append(next_strip)
                 j += 1
-            buyer_id = buyer_name_line  # stable internal id (username)
+            buyer_id = buyer_name_line
             if buyer_address_lines:
                 buyer_display[buyer_id] = f"{buyer_name_line} ({', '.join(buyer_address_lines)})"
             else:
@@ -108,7 +98,6 @@ if picklist_text:
         qty_match = quantity_pattern.search(line)
         if qty_match:
             quantity = int(qty_match.group(1))
-            # Look ahead for the card line (skip blank lines)
             j = i + 1
             while j < n:
                 card_match = card_pattern.search(lines[j])
@@ -127,10 +116,9 @@ if picklist_text:
             i = j + 1
             continue
 
-        # nothing matched — advance
         i += 1
 
-    # --- HTML table renderer (fixed column widths, row numbers, highlights, bolding only when Quantity > 1) ---
+    # --- Render table HTML ---
     def render_table_html(df):
         df = df.copy()
         df.insert(0, "#", range(1, len(df) + 1))
@@ -157,15 +145,14 @@ if picklist_text:
             font_weight = "bold" if int(row.get("Quantity", 0)) > 1 else "normal"
             html += f'<tr style="background-color:{bg_color}; font-weight:{font_weight};">'
             for col in df.columns:
-                width = col_widths.get(col, "150px")
-                cell = row[col]
-                html += f'<td style="border: 1px solid #ddd; padding: 6px; width:{width};">{cell}</td>'
+                html += f'<td style="border: 1px solid #ddd; padding: 6px;">{row[col]}</td>'
             html += "</tr>"
         html += "</table>"
         return html
 
-    # --- Display per-buyer tables with shipping info in the expander label ---
+    # --- Display per-buyer tables ---
     st.subheader("Parsed Picklist")
+    summary_rows = []
     for buyer_id, items in cards_by_buyer.items():
         df_buyer = pd.DataFrame(items)
         if df_buyer.empty:
@@ -180,13 +167,52 @@ if picklist_text:
         with st.expander(expander_label, expanded=True):
             st.markdown(render_table_html(df_buyer), unsafe_allow_html=True)
 
+        # --- Collect for summary table ---
+        shipping_name = ""
+        shipping_address_first = ""
+        if ship_label:
+            name_match = re.match(r"^(.*?)\s*\((.*)\)$", ship_label)
+            if name_match:
+                shipping_name = name_match.group(1).strip()
+                address_full = name_match.group(2).strip()
+                shipping_address_first = address_full.split(",")[0].strip() if address_full else ""
+            else:
+                shipping_name = ship_label
+        card_list = list(df_buyer["Card"].values)[:3]
+        while len(card_list) < 3:
+            card_list.append("")
+        summary_rows.append({
+            "Shipping Name": shipping_name,
+            "Shipping Address": shipping_address_first,
+            "# of Items": num_items,
+            "Total Cards": total_cards,
+            "Card 1": card_list[0],
+            "Card 2": card_list[1],
+            "Card 3": card_list[2]
+        })
+
+    # --- Buyer summary table ---
+    if summary_rows:
+        st.subheader("Buyer Summary Table")
+        df_summary = pd.DataFrame(summary_rows)
+        st.dataframe(df_summary, use_container_width=True)
+
+        # Summary CSV download
+        csv_summary = df_summary.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="⬇️ Download Buyer Summary CSV",
+            data=csv_summary,
+            file_name="buyer_summary.csv",
+            mime="text/csv"
+        )
+
     # --- Full CSV download ---
     all_items = [item for items in cards_by_buyer.values() for item in items]
     df_all = pd.DataFrame(all_items) if all_items else pd.DataFrame()
     if not df_all.empty:
         csv = df_all.to_csv(index=False).encode("utf-8")
         st.download_button(
-            label="⬇️ Download Full CSV",
+            label="⬇️ Download Full Picklist CSV",
             data=csv,
             file_name="picklist_parsed.csv",
             mime="text/csv"
