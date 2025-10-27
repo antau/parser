@@ -17,11 +17,14 @@ if picklist_text:
     # Matches a line that contains only digits, possibly surrounded by spaces/tabs
     shipping_start_pattern = re.compile(r"^[\t ]*\d+[\t ]*$")
 
-    cards_by_buyer = defaultdict(list)
-    shipping_info = {}              # maps buyer_key -> "Name (addr1, addr2, ...)"
+    # Use buyer_id (stable) -> list of cards, and buyer_display mapping for UI labels
+    cards_by_buyer = defaultdict(list)   # buyer_id -> list of card dicts
+    buyer_display = {}                   # buyer_id -> "Display Name (addr1, addr2)"
+    shipping_info = {}                   # buyer_id -> "Shipping Name (addr1, addr2)"
+
     current_order = None
-    current_buyer = None
-    last_buyer_seen = None          # fallback if current_buyer is None when shipping block appears
+    current_buyer_id = None
+    last_buyer_id_seen = None
     lines = picklist_text.splitlines()
 
     i = 0
@@ -34,14 +37,16 @@ if picklist_text:
             current_order = line
 
         # --- Buyer detection (heuristic) ---
+        # Buyer id is the first buyer_name_line (likely username), address lines follow
         elif line and not line.startswith(("Pokemon", "Item no", "Value")) and not order_pattern.search(line):
-            # collect buyer address lines (until blank, order line, "Pokemon", "Item no", "Value", or a shipping-number line)
+            # collect buyer address lines (until blank, order line, "Pokemon", "Item no", "Value", or shipping-number line)
             buyer_name_line = line
             buyer_address_lines = []
             j = i + 1
             while j < len(lines):
                 next_raw = lines[j]
                 next_strip = next_raw.strip()
+                # stop on blank, order line, labels, or shipping-number line
                 if (not next_strip
                     or order_pattern.search(next_strip)
                     or next_strip.startswith(("Pokemon", "Item no", "Value"))
@@ -49,12 +54,16 @@ if picklist_text:
                     break
                 buyer_address_lines.append(next_strip)
                 j += 1
+            # stable internal id
+            buyer_id = buyer_name_line  # keep it simple and stable
+            # display label includes address if present
             if buyer_address_lines:
-                buyer_key = f"{buyer_name_line} ({', '.join(buyer_address_lines)})"
+                buyer_display[buyer_id] = f"{buyer_name_line} ({', '.join(buyer_address_lines)})"
             else:
-                buyer_key = buyer_name_line
-            current_buyer = buyer_key
-            last_buyer_seen = current_buyer
+                buyer_display[buyer_id] = buyer_name_line
+            current_buyer_id = buyer_id
+            last_buyer_id_seen = buyer_id
+            # jump to last processed line
             i = j - 1
 
         # --- Quantity / Card lines ---
@@ -67,34 +76,25 @@ if picklist_text:
                 card_match = card_pattern.search(lines[j])
                 if card_match:
                     card_number, card_name, variation = card_match.groups()
-                    if current_buyer:
-                        cards_by_buyer[current_buyer].append({
+                    target_buyer = current_buyer_id if current_buyer_id else last_buyer_id_seen
+                    if target_buyer:
+                        cards_by_buyer[target_buyer].append({
                             "Order": current_order,
                             "Card": f"{card_number} {card_name}",
                             "Variation": variation,
                             "Quantity": quantity
                         })
-                    else:
-                        # If we haven't found a buyer for this block, attach to last_buyer_seen if available
-                        if last_buyer_seen:
-                            cards_by_buyer[last_buyer_seen].append({
-                                "Order": current_order,
-                                "Card": f"{card_number} {card_name}",
-                                "Variation": variation,
-                                "Quantity": quantity
-                            })
                     break
                 j += 1
-            i = j  # jump to card line (or end)
+            i = j  # move to the card line index (or end)
             i += 1
-            continue  # skip increment at bottom because we've already moved i
+            continue  # already moved i, skip bottom increment
 
-        # --- Shipping block detection (a line that only contains a number possibly with tabs/spaces) ---
+        # --- Shipping block detection (number line with tabs/spaces) ---
         if shipping_start_pattern.match(raw_line):
-            # Associate to current_buyer if set, otherwise to last_buyer_seen
-            buyer_for_shipping = current_buyer if current_buyer else last_buyer_seen
-
-            # Find first non-empty line after the number line -> shipping name
+            # attach shipping block to the most recent buyer id seen
+            buyer_for_shipping = current_buyer_id if current_buyer_id else last_buyer_id_seen
+            # find first non-empty line after the number line -> shipping name
             j = i + 1
             while j < len(lines) and not lines[j].strip():
                 j += 1
@@ -102,8 +102,7 @@ if picklist_text:
             if j < len(lines):
                 shipping_name = lines[j].strip()
                 j += 1
-
-            # Collect shipping address lines until blank line or next order line or next shipping-number line
+            # collect shipping address lines until blank, next order line, or next shipping-number line
             shipping_address_lines = []
             while j < len(lines):
                 next_raw = lines[j]
@@ -112,16 +111,13 @@ if picklist_text:
                     break
                 shipping_address_lines.append(next_strip)
                 j += 1
-
             shipping_address = ", ".join(shipping_address_lines) if shipping_address_lines else ""
             if buyer_for_shipping:
-                # format as "Name (addr1, addr2)" for the expander label
                 if shipping_address:
                     shipping_info[buyer_for_shipping] = f"{shipping_name} ({shipping_address})"
                 else:
                     shipping_info[buyer_for_shipping] = shipping_name
-
-            # advance i to the last processed line
+            # jump past shipping block
             i = j
             continue
 
@@ -161,19 +157,19 @@ if picklist_text:
         html += "</table>"
         return html
 
-    # --- Display per-buyer tables with shipping info in expander label ---
+    # --- Display per-buyer tables with shipping in expander label ---
     st.subheader("Parsed Picklist")
-    for buyer, items in cards_by_buyer.items():
+    for buyer_id, items in cards_by_buyer.items():
         df_buyer = pd.DataFrame(items)
         if df_buyer.empty:
             continue
         total_cards = int(df_buyer['Quantity'].sum())
         num_items = len(df_buyer)
-        ship_label = shipping_info.get(buyer, "")
-        expander_label = f"Buyer: {buyer} ({num_items} items, {total_cards} total cards)"
+        buyer_label = buyer_display.get(buyer_id, buyer_id)
+        ship_label = shipping_info.get(buyer_id, "")
+        expander_label = f"Buyer: {buyer_label} ({num_items} items, {total_cards} total cards)"
         if ship_label:
             expander_label += f" - {ship_label}"
-        # expanded True so you can see full table by default
         with st.expander(expander_label, expanded=True):
             st.markdown(render_table_html(df_buyer), unsafe_allow_html=True)
 
