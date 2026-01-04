@@ -54,4 +54,31 @@ def parse_orders(text: str):
         )
 
         rows.append({
-            "Store Name": s
+            "Store Name": store,
+            "Order URL": url,
+            "Order Total": f"${total}"
+        })
+
+        i += 1
+
+    return rows
+
+if raw_text.strip():
+    data = parse_orders(raw_text)
+
+    if data:
+        df = pd.DataFrame(data)
+
+        st.dataframe(
+            df,
+            hide_index=True,              # no 0,1,2 column
+            use_container_width=True,
+            column_config={
+                "Order URL": st.column_config.LinkColumn(
+                    "Store Name",
+                    display_text="View Order"
+                )
+            }
+        )
+    else:
+        st.warning("No orders found.")
