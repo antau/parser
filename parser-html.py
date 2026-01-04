@@ -65,4 +65,28 @@ def build_html_table(orders):
     html_doc = (
         '<style>'
         '  table.tcg { font-family: Arial, sans-serif; font-size: 10px; border-collapse: collapse; width: 100%; }'
-        '  .tcg
+        '  .tcg th, .tcg td { border: 1px solid #ddd; padding: 6px 8px; }'
+        '  .tcg th { background: #f6f6f6; text-align: left; }'
+        '  .tcg tr:nth-child(even) { background: #fafafa; }'
+        '  .tcg a { text-decoration: none; }'
+        '  .tcg a:hover { text-decoration: underline; }'
+        '</style>'
+        '<table class="tcg">'
+        '  <thead><tr><th>Store Name</th><th>Order Total</th></tr></thead>'
+        f'  <tbody>{"".join(rows)}</tbody>'
+        '</table>'
+    )
+
+    return html_doc
+
+if raw_text.strip():
+    orders = parse_orders(raw_text)
+
+    if not orders:
+        st.error("No orders detected. Make sure your input includes lines like: <br>StoreName $12.34")
+    else:
+        html_table = build_html_table(orders)
+
+        # Render as real HTML (NOT markdown)
+        # Height can be increased if you have many rows
+        components.html(html_table, height=500, scrolling=True)
