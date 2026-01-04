@@ -3,18 +3,21 @@ import pandas as pd
 import re
 import html
 
+st.set_page_config(layout="wide")
 st.title("TCGPlayer Orders")
 
-raw_text = st.text_area("Paste input:", height=400)
+raw_text = st.text_area("Paste order list:", height=400)
 
 def parse_orders(text: str):
-    # Decode HTML entities
     text = html.unescape(text)
 
-    # Normalize breaks
+    # Normalize <br> into newlines
     text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
 
-    # Remove all remaining HTML
+    # Remove span tags but keep text
+    text = re.sub(r"</?span[^>]*>", "", text, flags=re.IGNORECASE)
+
+    # Remove remaining HTML
     text = re.sub(r"<[^>]+>", "", text)
 
     lines = [l.strip() for l in text.splitlines() if l.strip()]
@@ -22,7 +25,6 @@ def parse_orders(text: str):
     rows = []
     i = 0
     while i < len(lines):
-        # Match: Store Name $12.34
         m = re.match(r"(.+?)\s+\$(\d+\.\d{2})$", lines[i])
         if not m:
             i += 1
@@ -30,7 +32,6 @@ def parse_orders(text: str):
 
         store, total = m.groups()
 
-        # Find order number in following lines
         order_id = None
         for j in range(i + 1, min(i + 4, len(lines))):
             oid = re.search(r"Order Number:\s*([A-Z0-9\-]+)", lines[j])
@@ -39,16 +40,16 @@ def parse_orders(text: str):
                 break
 
         if order_id:
-            link = (
+            url = (
                 "https://store.tcgplayer.com/myaccount/orderhistory"
                 f"?SearchString={order_id}"
             )
-            store_display = f"[{store}]({link})"
         else:
-            store_display = store
+            url = ""
 
         rows.append({
-            "Store Name": store_display,
+            "Store Name": store,
+            "Order URL": url,
             "Order Total": f"${total}"
         })
 
@@ -61,6 +62,17 @@ if raw_text.strip():
 
     if data:
         df = pd.DataFrame(data)
-        st.dataframe(df, use_container_width=True)
+
+        st.dataframe(
+            df,
+            hide_index=True,  # ✅ removes 0,1,2 column
+            use_container_width=True,
+            column_config={
+                "Order URL": st.column_config.LinkColumn(
+                    "Store Name",
+                    display_text="Open Order"
+                )
+            }
+        )
     else:
         st.warning("No orders found.")
