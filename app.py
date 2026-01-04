@@ -1,5 +1,5 @@
 # app.py
-# Version: v1.6
+# Version: v1.7 (Streamlit-version-safe)
 
 import re
 import pandas as pd
@@ -9,10 +9,10 @@ import streamlit as st
 # Page config
 # -----------------------
 st.set_page_config(layout="wide")
-st.caption("App version: v1.6")
+st.caption("App version: v1.7")
 
 # -----------------------
-# Global CSS (Arial, size 10)
+# Global CSS
 # -----------------------
 st.markdown(
     """
@@ -35,10 +35,10 @@ raw_text = st.text_area(
 )
 
 # -----------------------
-# Parse function
+# Parser
 # -----------------------
-def parse_orders(text: str):
-    results = []
+def parse_orders(text: str) -> pd.DataFrame:
+    rows = []
 
     pattern = re.compile(
         r"<br>\s*([^<$]+?)\s*\$(\d+\.\d{2}).*?"
@@ -47,15 +47,20 @@ def parse_orders(text: str):
     )
 
     for store, total, order_id in pattern.findall(text):
-        results.append(
+        url = (
+            "https://store.tcgplayer.com/myaccount/orderhistory"
+            f"?SearchString={order_id}"
+        )
+
+        rows.append(
             {
-                "Store Name": store.strip(),
-                "Store Link": f"https://store.tcgplayer.com/myaccount/orderhistory?SearchString={order_id}",
+                "Store Name": url,   # URL goes here
+                "Display Name": store.strip(),
                 "Order Total": f"${total}",
             }
         )
 
-    return pd.DataFrame(results)
+    return pd.DataFrame(rows)
 
 
 # -----------------------
@@ -74,9 +79,9 @@ if raw_text.strip():
             column_config={
                 "Store Name": st.column_config.LinkColumn(
                     "Store Name",
-                    url_column="Store Link",
+                    display_text="Display Name",
                 ),
-                "Store Link": None,  # hide helper column
+                "Display Name": None,  # hide helper column
                 "Order Total": "Order Total",
             },
         )
