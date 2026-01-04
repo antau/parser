@@ -1,61 +1,82 @@
-import streamlit as st
-import pandas as pd
+# app.py
+# Version: v1.6
+
 import re
-import html
+import pandas as pd
+import streamlit as st
 
-APP_VERSION = "v1.3"
-
+# -----------------------
+# Page config
+# -----------------------
 st.set_page_config(layout="wide")
-st.title("TCGPlayer Orders")
-st.caption(f"App version: {APP_VERSION}")
+st.caption("App version: v1.6")
 
-raw_text = st.text_area("Paste order list:", height=400)
+# -----------------------
+# Global CSS (Arial, size 10)
+# -----------------------
+st.markdown(
+    """
+    <style>
+    * {
+        font-family: Arial, sans-serif;
+        font-size: 10px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
+# -----------------------
+# Input
+# -----------------------
+raw_text = st.text_area(
+    "Paste order list here:",
+    height=300,
+)
+
+# -----------------------
+# Parse function
+# -----------------------
 def parse_orders(text: str):
-    text = html.unescape(text)
-    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"</?span[^>]*>", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", "", text)
+    results = []
 
-    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    pattern = re.compile(
+        r"<br>\s*([^<$]+?)\s*\$(\d+\.\d{2}).*?"
+        r"SearchString=([A-Z0-9-]+)",
+        re.DOTALL,
+    )
 
-    rows = []
-    i = 0
-    while i < len(lines):
-        m = re.match(r"(.+?)\s+\$(\d+\.\d{2})$", lines[i])
-        if not m:
-            i += 1
-            continue
-
-        store, total = m.groups()
-
-        order_id = None
-        for j in range(i + 1, min(i + 4, len(lines))):
-            oid = re.search(r"Order Number:\s*([A-Z0-9\-]+)", lines[j])
-            if oid:
-                order_id = oid.group(1)
-                break
-
-        url = (
-            "https://store.tcgplayer.com/myaccount/orderhistory"
-            f"?SearchString={order_id}"
-            if order_id else ""
+    for store, total, order_id in pattern.findall(text):
+        results.append(
+            {
+                "Store Name": store.strip(),
+                "Store Link": f"https://store.tcgplayer.com/myaccount/orderhistory?SearchString={order_id}",
+                "Order Total": f"${total}",
+            }
         )
 
-        rows.append({
-            "Store Name": store,
-            "Store Link": url,
-            "Order Total": f"${total}"
-        })
+    return pd.DataFrame(results)
 
-        i += 1
 
-    return rows
-
+# -----------------------
+# Output
+# -----------------------
 if raw_text.strip():
-    data = parse_orders(raw_text)
+    df = parse_orders(raw_text)
 
-    if data:
-        df = pd.DataFrame(data)
-
+    if df.empty:
+        st.error("No orders detected. Check input format.")
+    else:
         st.dataframe(
+            df,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "Store Name": st.column_config.LinkColumn(
+                    "Store Name",
+                    url_column="Store Link",
+                ),
+                "Store Link": None,  # hide helper column
+                "Order Total": "Order Total",
+            },
+        )
