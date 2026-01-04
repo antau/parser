@@ -1,12 +1,12 @@
 # app.py
-# Version: v2.1-html (HTML table renderer using components.html)
+# Version: v2.2-html (handles first store with or without leading <br>)
 
 import re
 import html as html_lib
 import streamlit as st
 import streamlit.components.v1 as components
 
-APP_VERSION = "v2.1-html"
+APP_VERSION = "v2.2-html"
 
 st.set_page_config(layout="wide")
 st.title("TCGPlayer Orders (HTML Table)")
@@ -15,19 +15,18 @@ st.caption(f"App version: {APP_VERSION}")
 raw_text = st.text_area("Paste order list here:", height=320)
 
 def parse_orders(raw: str):
-    """
-    Returns list of dicts: {"store": str, "total": str, "url": str}
-    """
     raw = html_lib.unescape(raw)
 
     # Remove span tags but keep text
     raw = re.sub(r"</?span[^>]*>", "", raw, flags=re.IGNORECASE)
 
-    # Extract store + total from lines like: <br>Store Name $12.34
+    # Store/total can start either:
+    # - at the beginning of the text, OR
+    # - right after a <br>
     store_total = re.findall(
-        r"<br>\s*([^<$]+?)\s*\$(\d+\.\d{2})",
+        r"(?:^|<br\s*/?>)\s*([^<$\n\r]+?)\s*\$(\d+\.\d{2})",
         raw,
-        flags=re.IGNORECASE,
+        flags=re.IGNORECASE | re.MULTILINE,
     )
 
     # Extract orderhistory URLs
@@ -61,32 +60,26 @@ def build_html_table(orders):
             f'</tr>'
         )
 
-    # IMPORTANT: no indentation that could create markdown code blocks
     html_doc = (
         '<style>'
-        '  table.tcg { font-family: Arial, sans-serif; font-size: 10px; border-collapse: collapse; width: 100%; }'
-        '  .tcg th, .tcg td { border: 1px solid #ddd; padding: 6px 8px; }'
-        '  .tcg th { background: #f6f6f6; text-align: left; }'
-        '  .tcg tr:nth-child(even) { background: #fafafa; }'
-        '  .tcg a { text-decoration: none; }'
-        '  .tcg a:hover { text-decoration: underline; }'
+        'table.tcg{font-family:Arial,sans-serif;font-size:10px;border-collapse:collapse;width:100%;}'
+        '.tcg th,.tcg td{border:1px solid #ddd;padding:6px 8px;}'
+        '.tcg th{background:#f6f6f6;text-align:left;}'
+        '.tcg tr:nth-child(even){background:#fafafa;}'
+        '.tcg a{text-decoration:none;}'
+        '.tcg a:hover{text-decoration:underline;}'
         '</style>'
         '<table class="tcg">'
-        '  <thead><tr><th>Store Name</th><th>Order Total</th></tr></thead>'
-        f'  <tbody>{"".join(rows)}</tbody>'
+        '<thead><tr><th>Store Name</th><th>Order Total</th></tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody>'
         '</table>'
     )
-
     return html_doc
 
 if raw_text.strip():
     orders = parse_orders(raw_text)
 
     if not orders:
-        st.error("No orders detected. Make sure your input includes lines like: <br>StoreName $12.34")
+        st.error("No orders detected. Make sure your input contains lines like: StoreName $12.34")
     else:
-        html_table = build_html_table(orders)
-
-        # Render as real HTML (NOT markdown)
-        # Height can be increased if you have many rows
-        components.html(html_table, height=500, scrolling=True)
+        components.html(build_html_table(orders), height=520, scrolling=True)
