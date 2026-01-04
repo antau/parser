@@ -4,48 +4,72 @@ import re
 import html
 
 st.set_page_config(layout="wide")
-st.title("TCGPlayer Order Summary")
+st.title("TCGPlayer Orders")
 
 raw_text = st.text_area(
-    "Paste your order list here:",
+    "Paste order list:",
     height=400
 )
 
-def strip_all_html(text: str) -> str:
+def normalize_text(text: str) -> str:
+    # Decode HTML entities
     text = html.unescape(text)
-    return re.sub(r"<[^>]+>", "", text)
+
+    # Remove span tags but keep content
+    text = re.sub(r"</?span[^>]*>", "", text, flags=re.IGNORECASE)
+
+    # Convert <br> to newline
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+
+    # Remove all remaining HTML tags
+    text = re.sub(r"<[^>]+>", "", text)
+
+    return text
 
 def parse_orders(text: str):
-    clean_text = strip_all_html(text)
-
-    # Matches: Store Name $12.34
-    pattern = re.compile(r"(.+?)\s+\$(\d+\.\d{2})")
+    clean = normalize_text(text)
 
     orders = []
-    for line in clean_text.splitlines():
-        match = pattern.search(line)
-        if match:
-            store = match.group(1).strip()
-            total = match.group(2)
+    lines = [l.strip() for l in clean.splitlines() if l.strip()]
 
+    for i, line in enumerate(lines):
+        # Match: Store Name $12.34
+        m = re.match(r"(.+?)\s+\$(\d+\.\d{2})$", line)
+        if not m:
+            continue
+
+        store, total = m.groups()
+
+        # Look ahead for Order Number
+        order_id = None
+        for j in range(i + 1, min(i + 4, len(lines))):
+            oid = re.search(r"Order Number:\s*([A-Z0-9\-]+)", lines[j])
+            if oid:
+                order_id = oid.group(1)
+                break
+
+        if order_id:
             url = (
                 "https://store.tcgplayer.com/myaccount/orderhistory"
-                f"?SearchString={store.replace(' ', '%20')}"
+                f"?SearchString={order_id}"
             )
+        else:
+            url = ""
 
-            orders.append({
-                "Store Name": f"[{store}]({url})",
-                "Order Total": f"${total}"
-            })
+        orders.append({
+            "Store Name": f"[{store}]({url})",
+            "Order Total": f"${total}"
+        })
 
     return orders
 
 if raw_text.strip():
-    orders = parse_orders(raw_text)
+    data = parse_orders(raw_text)
 
-    if orders:
-        df = pd.DataFrame(orders)
+    if data:
+        df = pd.DataFrame(data)
 
+        # Font styling
         st.markdown(
             """
             <style>
@@ -58,9 +82,6 @@ if raw_text.strip():
             unsafe_allow_html=True
         )
 
-        st.dataframe(
-            df,
-            use_container_width=True
-        )
+        st.dataframe(df, use_container_width=True)
     else:
-        st.warning("No orders found. Please check the input format.")
+        st.warning("No orders detected.")
